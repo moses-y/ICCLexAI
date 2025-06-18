@@ -1,0 +1,106 @@
+{
+  "url": "https://otplink.icc-cpi.int/",
+  "description": "Manual mapping of ICC form fields based on common patterns",
+  "fields": [
+    {
+      "name": "incident_date",
+      "label": "Date of Incident",
+      "type": "date",
+      "required": true,
+      "default_value": "2025-06-17"
+    },
+    {
+      "name": "incident_time",
+      "label": "Time of Incident",
+      "type": "time",
+      "required": true,
+      "default_value": "14:00"
+    },
+    {
+      "name": "incident_location",
+      "label": "Location of Incident",
+      "type": "text",
+      "required": true,
+      "default_value": "CBD, Nairobi, Kenya"
+    },
+    {
+      "name": "incident_description",
+      "label": "Description of Incident",
+      "type": "textarea",
+      "required": true,
+      "placeholder": "Describe what happened..."
+    },
+    {
+      "name": "evidence_type",
+      "label": "Type of Evidence",
+      "type": "select",
+      "required": true,
+      "options": [
+        [
+          "photo",
+          "Photograph"
+        ],
+        [
+          "video",
+          "Video Recording"
+        ],
+        [
+          "document",
+          "Document"
+        ],
+        [
+          "audio",
+          "Audio Recording"
+        ],
+        [
+          "witness_statement",
+          "Witness Statement"
+        ]
+      ]
+    },
+    {
+      "name": "evidence_files",
+      "label": "Evidence Files",
+      "type": "file",
+      "required": true,
+      "multiple": true
+    },
+    {
+      "name": "submitter_name",
+      "label": "Your Name (Optional)",
+      "type": "text",
+      "required": false
+    },
+    {
+      "name": "submitter_email",
+      "label": "Your Email (Optional)",
+      "type": "email",
+      "required": false
+    },
+    {
+      "name": "submitter_phone",
+      "label": "Your Phone (Optional)",
+      "type": "tel",
+      "required": false
+    },
+    {
+      "name": "witness_name",
+      "label": "Witness Name (If any)",
+      "type": "text",
+      "required": false
+    },
+    {
+      "name": "witness_contact",
+      "label": "Witness Contact",
+      "type": "text",
+      "required": false
+    },
+    {
+      "name": "additional_info",
+      "label": "Additional Information",
+      "type": "textarea",
+      "required": false,
+      "placeholder": "Any additional relevant information..."
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+[bandit]
+exclude_dirs = .venv,venv,__pycache__,.git,node_modules
+skips = B101,B601
+
+[bandit.assert_used]
+skips = *test*.py,*_test.py

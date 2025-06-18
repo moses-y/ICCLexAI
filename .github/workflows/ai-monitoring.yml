@@ -1,0 +1,207 @@
+name: AI Model Performance Monitoring
+
+on:
+  schedule:
+    - cron: '0 6 * * *'  # Daily at 6 AM UTC
+  workflow_dispatch:
+
+jobs:
+  model-performance-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+        pip install pytest
+    
+    - name: Test DeepSeek R1 Model Response
+      run: |
+        python -c "
+        import os
+        from groq import Groq
+        
+        client = Groq(api_key=os.environ['GROQ_API_KEY'])
+        
+        # Test ICC evidence description generation
+        response = client.chat.completions.create(
+            model='deepseek-r1-distill-llama-70b',
+            messages=[
+                {'role': 'system', 'content': 'Generate a professional ICC evidence description.'},
+                {'role': 'user', 'content': 'Police violence during protest in Nairobi'}
+            ],
+            max_completion_tokens=200
+        )
+        
+        print('DeepSeek R1 Model Response:', response.choices[0].message.content)
+        assert len(response.choices[0].message.content) > 50
+        "
+      env:
+        GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+    
+    - name: Test Llama 3.3 Fallback Model
+      run: |
+        python -c "
+        import os
+        from groq import Groq
+        
+        client = Groq(api_key=os.environ['GROQ_API_KEY'])
+        
+        response = client.chat.completions.create(
+            model='llama-3.3-70b-versatile',
+            messages=[
+                {'role': 'system', 'content': 'Generate a professional ICC evidence description.'},
+                {'role': 'user', 'content': 'Human rights violation documentation'}
+            ],
+            max_completion_tokens=200
+        )
+        
+        print('Llama 3.3 Fallback Response:', response.choices[0].message.content)
+        assert len(response.choices[0].message.content) > 50
+        "
+      env:
+        GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+    
+    - name: Test Metadata Extraction
+      run: |
+        python -c "
+        import tempfile
+        import os
+        from main_app import ICCSubmissionTool
+        
+        tool = ICCSubmissionTool()
+        
+        # Test image metadata extraction
+        print('Testing metadata extraction capabilities...')
+        
+        # Create dummy test file
+        with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as f:
+            f.write(b'dummy image data')
+            print(f'Created test file: {f.name}')
+        
+        print('Metadata extraction test completed')
+        "
+
+  multimodal-capability-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+    
+    - name: Test Image Processing Capabilities
+      run: |
+        python -c "
+        import cv2
+        import numpy as np
+        from PIL import Image
+        import tempfile
+        
+        # Test OpenCV installation
+        print('OpenCV version:', cv2.__version__)
+        
+        # Create test image
+        test_img = np.zeros((100, 100, 3), dtype=np.uint8)
+        cv2.rectangle(test_img, (10, 10), (90, 90), (255, 255, 255), -1)
+        
+        # Save and load test
+        with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as f:
+            cv2.imwrite(f.name, test_img)
+            loaded_img = cv2.imread(f.name)
+            print('Image processing test passed')
+        "
+    
+    - name: Test Document Processing
+      run: |
+        python -c "
+        import fitz  # PyMuPDF
+        from docx import Document
+        import tempfile
+        
+        print('PyMuPDF version:', fitz.version)
+        
+        # Test PDF processing
+        doc = fitz.open()
+        page = doc.new_page()
+        page.insert_text((72, 72), 'Test ICC Evidence Document')
+        
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as f:
+            doc.save(f.name)
+            print('PDF processing test passed')
+        
+        doc.close()
+        "
+
+  performance-benchmark:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+        pip install memory-profiler psutil
+    
+    - name: Run Performance Benchmarks
+      run: |
+        python -c "
+        import time
+        import psutil
+        import os
+        from groq import Groq
+        
+        # Memory usage before
+        process = psutil.Process(os.getpid())
+        memory_before = process.memory_info().rss / 1024 / 1024  # MB
+        
+        print(f'Memory usage before: {memory_before:.2f} MB')
+        
+        # AI generation performance test
+        client = Groq(api_key=os.environ['GROQ_API_KEY'])
+        
+        start_time = time.time()
+        response = client.chat.completions.create(
+            model='deepseek-r1-distill-llama-70b',
+            messages=[
+                {'role': 'system', 'content': 'Generate ICC evidence description in under 280 characters.'},
+                {'role': 'user', 'content': 'Police shooting incident, civilian casualties, video evidence'}
+            ],
+            max_completion_tokens=150
+        )
+        end_time = time.time()
+        
+        # Memory usage after
+        memory_after = process.memory_info().rss / 1024 / 1024  # MB
+        
+        print(f'AI generation time: {end_time - start_time:.2f} seconds')
+        print(f'Memory usage after: {memory_after:.2f} MB')
+        print(f'Memory increase: {memory_after - memory_before:.2f} MB')
+        print(f'Response length: {len(response.choices[0].message.content)} characters')
+        
+        # Performance assertions
+        assert end_time - start_time < 30, 'AI generation too slow'
+        assert memory_after - memory_before < 100, 'Memory usage too high'
+        "
+      env:
+        GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}

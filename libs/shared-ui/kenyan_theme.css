@@ -1,0 +1,210 @@
+/* 🇰🇪 ICCLexAI Unified Kenyan Theme CSS
+   Consolidated from all apps to eliminate 500+ lines of duplication
+*/
+
+:root {
+  --kenyan-black: #000000;
+  --kenyan-red: #D32F2F;
+  --kenyan-green: #388E3C;
+  --kenyan-white: #FFFFFF;
+  --kenyan-dark-green: #006600;
+  --kenyan-light-green: rgba(0, 128, 0, 0.05);
+  --kenyan-success: #4CAF50;
+}
+
+/* MAIN HEADER - Kenyan Flag Design */
+.main-header {
+    background: linear-gradient(90deg, 
+        var(--kenyan-black) 20%, 
+        var(--kenyan-white) 20% 22%, 
+        var(--kenyan-red) 22% 78%, 
+        var(--kenyan-white) 78% 80%, 
+        var(--kenyan-green) 80%);
+    padding: 1.5rem;
+    text-align: center;
+    color: var(--kenyan-black);
+    font-weight: bold;
+    font-size: 2rem;
+    margin: 10px 0;
+    text-shadow: 2px 2px 4px rgba(255,255,255,0.9);
+    border-radius: 12px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    border: 2px solid var(--kenyan-green);
+}
+
+/* SUB HEADERS */
+.sub-header {
+    background: linear-gradient(135deg, var(--kenyan-green) 0%, var(--kenyan-dark-green) 100%);
+    color: white;
+    padding: 10px;
+    text-align: center;
+    font-size: 1.2rem;
+    border-radius: 8px;
+    margin: 10px 0;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+}
+
+/* EMERGENCY BANNER */
+.emergency-banner {
+    background: linear-gradient(45deg, var(--kenyan-red) 0%, #FF5722 100%);
+    color: white;
+    padding: 15px;
+    border-radius: 10px;
+    text-align: center;
+    font-weight: bold;
+    margin-bottom: 20px;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.8; }
+}
+
+/* UPLOAD ZONE */
+.upload-zone {
+    border: 3px dashed var(--kenyan-green);
+    border-radius: 15px;
+    padding: 30px;
+    text-align: center;
+    background: var(--kenyan-light-green);
+    margin: 15px 0;
+    transition: all 0.3s ease;
+}
+
+.upload-zone:hover {
+    background: rgba(0, 128, 0, 0.1);
+    border-color: var(--kenyan-black);
+}
+
+/* ANALYSIS CARDS */
+.analysis-card {
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    padding: 20px;
+    border-radius: 15px;
+    border-left: 6px solid var(--kenyan-green);
+    margin: 15px 0;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    transition: transform 0.2s ease;
+}
+
+.analysis-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+}
+
+/* PERFORMANCE INDICATORS */
+.speed-indicator {
+    background: var(--kenyan-success);
+    color: black;
+    padding: 8px 15px;
+    border-radius: 20px;
+    font-weight: bold;
+    display: inline-block;
+    margin: 8px;
+}
+
+/* STATUS CARDS */
+.status-card {
+    background: var(--kenyan-white);
+    border-left: 6px solid var(--kenyan-green);
+    padding: 20px;
+    margin: 15px 0;
+    border-radius: 10px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+/* METRIC CARDS */
+.metric-card {
+    background: white;
+    padding: 15px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    margin: 8px 0;
+    border-top: 4px solid var(--kenyan-green);
+}
+
+/* AI INSIGHT CARDS */
+.ai-insight {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 15px;
+    border-radius: 10px;
+    margin: 10px 0;
+}
+
+/* LEGAL ASSESSMENT */
+.legal-assessment {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+    padding: 15px;
+    border-radius: 10px;
+    margin: 10px 0;
+}
+
+/* STREAMLIT BUTTON OVERRIDES */
+.stButton > button {
+    background: linear-gradient(45deg, var(--kenyan-green) 0%, var(--kenyan-black) 100%);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    padding: 12px 24px;
+    font-weight: bold;
+    transition: all 0.3s ease;
+}
+
+.stButton > button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(0,0,0,0.3);
+}
+
+/* NAVIGATION BUTTONS */
+.navigation-buttons {
+    display: flex;
+    justify-content: space-between;
+    margin: 0.5px 0;
+    height: 30px;
+    min-height: 30px;
+}
+
+.btn-primary {
+    background: var(--kenyan-green) !important;
+    border: none !important;
+    color: white !important;
+}
+
+.btn-secondary {
+    background: var(--kenyan-black) !important;
+    border: none !important;
+    color: white !important;
+}
+
+/* COMPACT SPACING FOR PERFORMANCE */
+.stMarkdown {
+    margin-bottom: 0.5px !important;
+}
+
+.stHeader {
+    padding-top: 5px !important;
+    padding-bottom: 5px !important;
+}
+
+.block-container {
+    padding-top: 5px !important;
+    padding-bottom: 5px !important;
+    padding-left: 5px !important;
+    padding-right: 5px !important;
+}
+
+/* RESPONSIVE DESIGN */
+@media (max-width: 768px) {
+    .main-header {
+        font-size: 1.5rem;
+        padding: 1rem;
+    }
+    
+    .analysis-card {
+        padding: 15px;
+        margin: 10px 0;
+    }
+}

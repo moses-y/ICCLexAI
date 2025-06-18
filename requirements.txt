@@ -1,0 +1,61 @@
+# Core Framework - Fast API + Streamlit
+streamlit>=1.29.0
+fastapi>=0.104.0
+uvicorn>=0.24.0
+
+# AI and ML - Groq for Lightning Speed
+groq>=0.4.0
+
+# Google AI APIs
+google-api-python-client>=2.100.0
+google-auth>=2.23.0
+google-auth-oauthlib>=1.1.0
+google-auth-httplib2>=0.1.1
+
+# Computer Vision and Image Processing
+opencv-python>=4.8.0
+pillow>=10.0.0
+numpy>=1.24.0
+
+# Audio Processing
+SpeechRecognition>=3.10.0
+mutagen>=1.47.0
+
+# Document Processing
+PyMuPDF>=1.23.0
+python-docx>=0.8.11
+exifread>=3.0.0
+
+# Web Automation
+selenium>=4.15.0
+webdriver-manager>=4.0.0
+
+# Data Processing and Visualization
+pandas>=2.1.0
+plotly>=5.17.0
+
+# Geolocation and Mapping
+geopy>=2.3.0
+geocoder>=1.38.1
+
+# HTTP and API
+requests>=2.31.0
+httpx>=0.25.0
+
+# Caching and Performance
+redis>=5.0.0
+aiofiles>=23.2.1
+
+# Environment and Configuration
+python-dotenv>=1.0.0
+
+# Web Parsing
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+
+# Async and Validation
+python-multipart>=0.0.6
+pydantic>=2.5.0
+
+# Utilities
+validators>=0.22.0

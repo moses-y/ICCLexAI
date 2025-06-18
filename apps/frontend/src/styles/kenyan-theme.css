@@ -1,0 +1,334 @@
+/* ICCLexAI Kenyan Theme - Inspired by Kenya Flag Colors */
+/* 🇰🇪 Black, Red, Green, White with Gold accents */
+
+:root {
+  /* Kenya Flag Colors */
+  --kenya-black: #000000;
+  --kenya-red: #CE1126;
+  --kenya-green: #006600;
+  --kenya-white: #FFFFFF;
+  --kenya-gold: #FFD700;
+  
+  /* Theme Variations */
+  --kenya-red-light: #E6384A;
+  --kenya-green-light: #228B22;
+  --kenya-black-light: #333333;
+  --kenya-gold-light: #FFF8DC;
+  
+  /* Semantic Colors */
+  --primary: var(--kenya-red);
+  --primary-foreground: var(--kenya-white);
+  --secondary: var(--kenya-green);
+  --secondary-foreground: var(--kenya-white);
+  --accent: var(--kenya-gold);
+  --accent-foreground: var(--kenya-black);
+  --background: var(--kenya-white);
+  --foreground: var(--kenya-black);
+  --card: var(--kenya-white);
+  --card-foreground: var(--kenya-black);
+  --border: var(--kenya-black-light);
+  --muted: var(--kenya-gold-light);
+  --muted-foreground: var(--kenya-black);
+}
+
+/* Kenyan-themed animations */
+@keyframes kenyan-flag-wave {
+  0%, 100% { 
+    border-color: var(--kenya-black);
+  }
+  25% { 
+    border-color: var(--kenya-red);
+  }
+  50% { 
+    border-color: var(--kenya-white);
+  }
+  75% { 
+    border-color: var(--kenya-green);
+  }
+}
+
+@keyframes justice-scale {
+  0%, 100% { 
+    transform: rotate(-2deg);
+  }
+  50% { 
+    transform: rotate(2deg);
+  }
+}
+
+/* Kenyan Upload Area */
+.kenyan-upload-area {
+  border: 3px dashed var(--kenya-red);
+  border-radius: 12px;
+  background: linear-gradient(135deg, 
+    var(--kenya-white) 0%, 
+    var(--kenya-gold-light) 100%);
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.kenyan-upload-area:hover {
+  border-color: var(--kenya-green);
+  background: linear-gradient(135deg, 
+    var(--kenya-gold-light) 0%, 
+    var(--kenya-white) 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(206, 17, 38, 0.15);
+}
+
+.kenyan-upload-area.active {
+  animation: kenyan-flag-wave 2s infinite;
+}
+
+/* Traditional Pattern Overlay */
+.kenyan-pattern::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: 
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 5px,
+      rgba(0, 102, 0, 0.05) 5px,
+      rgba(0, 102, 0, 0.05) 10px
+    );
+  pointer-events: none;
+}
+
+/* Kenyan Buttons */
+.kenyan-button {
+  background: linear-gradient(135deg, var(--kenya-red), var(--kenya-red-light));
+  color: var(--kenya-white);
+  border: 2px solid var(--kenya-black);
+  font-weight: 600;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.kenyan-button:hover {
+  background: linear-gradient(135deg, var(--kenya-green), var(--kenya-green-light));
+  transform: translateY(-1px);
+  box-shadow: 0 4px 15px rgba(0, 102, 0, 0.3);
+}
+
+.kenyan-button.primary {
+  background: linear-gradient(135deg, var(--kenya-red), var(--kenya-red-light));
+}
+
+.kenyan-button.secondary {
+  background: linear-gradient(135deg, var(--kenya-green), var(--kenya-green-light));
+}
+
+.kenyan-button.accent {
+  background: linear-gradient(135deg, var(--kenya-gold), var(--kenya-gold-light));
+  color: var(--kenya-black);
+}
+
+/* Kenyan Cards */
+.kenyan-card {
+  background: var(--kenya-white);
+  border: 2px solid var(--kenya-black-light);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+.kenyan-card:hover {
+  border-color: var(--kenya-red);
+  box-shadow: 0 8px 25px rgba(206, 17, 38, 0.15);
+  transform: translateY(-2px);
+}
+
+.kenyan-card.featured {
+  border-color: var(--kenya-gold);
+  background: linear-gradient(135deg, 
+    var(--kenya-white) 0%, 
+    var(--kenya-gold-light) 100%);
+}
+
+/* Progress bars with Kenya flag colors */
+.kenyan-progress {
+  background: var(--kenya-black-light);
+  border-radius: 8px;
+  overflow: hidden;
+  height: 8px;
+}
+
+.kenyan-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, 
+    var(--kenya-black) 0%, 
+    var(--kenya-red) 33%, 
+    var(--kenya-white) 66%, 
+    var(--kenya-green) 100%);
+  transition: width 0.3s ease;
+  position: relative;
+}
+
+.kenyan-progress-bar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    rgba(255, 215, 0, 0.3) 50%, 
+    transparent 100%);
+  animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* Chat Widget Kenyan Style */
+.kenyan-chat-widget {
+  background: var(--kenya-white);
+  border: 3px solid var(--kenya-red);
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(206, 17, 38, 0.2);
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 350px;
+  max-height: 500px;
+  z-index: 1000;
+}
+
+.kenyan-chat-header {
+  background: linear-gradient(135deg, var(--kenya-red), var(--kenya-green));
+  color: var(--kenya-white);
+  padding: 12px 16px;
+  border-radius: 12px 12px 0 0;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kenyan-chat-body {
+  padding: 16px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.kenyan-chat-input {
+  border-top: 2px solid var(--kenya-gold);
+  padding: 12px;
+  background: var(--kenya-gold-light);
+}
+
+/* Justice Scale Icon Animation */
+.justice-scale {
+  animation: justice-scale 3s ease-in-out infinite;
+  color: var(--kenya-gold);
+}
+
+/* Traditional Maasai-inspired border pattern */
+.maasai-border {
+  border: 3px solid var(--kenya-red);
+  position: relative;
+}
+
+.maasai-border::before {
+  content: '';
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  right: -3px;
+  bottom: -3px;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--kenya-black),
+    var(--kenya-black) 2px,
+    var(--kenya-white) 2px,
+    var(--kenya-white) 4px,
+    var(--kenya-green) 4px,
+    var(--kenya-green) 6px,
+    var(--kenya-white) 6px,
+    var(--kenya-white) 8px
+  );
+  z-index: -1;
+  border-radius: inherit;
+}
+
+/* AI Processing Indicators */
+.ai-processing {
+  background: linear-gradient(135deg, var(--kenya-gold), var(--kenya-gold-light));
+  border: 2px solid var(--kenya-green);
+  color: var(--kenya-black);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+/* Kenya-themed status indicators */
+.status-active {
+  color: var(--kenya-green);
+  background: rgba(0, 102, 0, 0.1);
+}
+
+.status-processing {
+  color: var(--kenya-gold);
+  background: rgba(255, 215, 0, 0.1);
+}
+
+.status-error {
+  color: var(--kenya-red);
+  background: rgba(206, 17, 38, 0.1);
+}
+
+/* Responsive design for mobile */
+@media (max-width: 768px) {
+  .kenyan-chat-widget {
+    width: 300px;
+    bottom: 10px;
+    right: 10px;
+  }
+  
+  .kenyan-upload-area {
+    padding: 20px;
+  }
+  
+  .kenyan-card {
+    margin: 8px;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  :root {
+    --kenya-black: #000000;
+    --kenya-white: #FFFFFF;
+    --border: #000000;
+  }
+  
+  .kenyan-card {
+    border-width: 3px;
+  }
+}
+
+/* Print styles */
+@media print {
+  .kenyan-chat-widget {
+    display: none;
+  }
+  
+  .kenyan-card {
+    border: 2px solid #000000;
+    box-shadow: none;
+  }
+}

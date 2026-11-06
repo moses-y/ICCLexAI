@@ -12,6 +12,11 @@ class AgentUnavailable(Exception):
     """The agent could not run. The message is shown to the submitter."""
 
 
+class AgentTransient(AgentUnavailable):
+    """The outside service was unreachable or rate-limited past the client's own retries. Unlike a missing
+    key or consent, this can succeed later, so the job is re-queued with a delay."""
+
+
 @dataclass
 class FindingDraft:
     kind: str

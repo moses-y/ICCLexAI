@@ -72,7 +72,7 @@ def test_geojson_and_fields_use_only_confirmed_data_and_say_it_is_not_filed(clie
     (feature,) = json.loads(z.read("evidence_map.geojson"))["features"]
     assert feature["geometry"]["coordinates"][0] > 36 and feature["geometry"]["coordinates"][1] < -1
     fields = z.read("otplink_fields.md").decode()
-    assert "provisional map of the OTPLink form" in fields and "photo.jpg" in z.read("manifest.json").decode()
+    assert "live OTPLink form" in fields and "## Factual Summary" in fields and "photo.jpg" in z.read("manifest.json").decode()
     assert "has not been submitted to anyone" in z.read("README_FIRST.txt").decode()
 
 

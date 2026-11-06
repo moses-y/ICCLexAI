@@ -5,7 +5,15 @@ import base64
 import json
 
 from .. import config
-from .base import AgentUnavailable
+from .base import AgentTransient, AgentUnavailable
+
+
+def _fail(what: str, exc: Exception) -> AgentUnavailable:
+    import groq
+
+    transient = (groq.APIConnectionError, groq.RateLimitError, groq.InternalServerError)
+    cls = AgentTransient if isinstance(exc, transient) else AgentUnavailable
+    return cls(f"{what} failed: {exc}")
 
 
 def _client():
@@ -13,7 +21,7 @@ def _client():
         raise AgentUnavailable("GROQ_API_KEY is not set")
     from groq import Groq
 
-    return Groq(api_key=config.GROQ_API_KEY)
+    return Groq(api_key=config.GROQ_API_KEY, max_retries=config.GROQ_MAX_RETRIES)
 
 
 def _json_from(text: str) -> dict:
@@ -46,7 +54,7 @@ def complete_json(system: str, user: str, model: str | None = None) -> tuple[dic
     except AgentUnavailable:
         raise
     except Exception as exc:
-        raise AgentUnavailable(f"text model call failed: {exc}") from exc
+        raise _fail("text model call", exc) from exc
     return _json_from(resp.choices[0].message.content or ""), model
 
 
@@ -59,7 +67,7 @@ def complete_text(system: str, messages: list[dict], model: str | None = None) -
     except AgentUnavailable:
         raise
     except Exception as exc:
-        raise AgentUnavailable(f"text model call failed: {exc}") from exc
+        raise _fail("text model call", exc) from exc
     return resp.choices[0].message.content or "", model
 
 
@@ -67,6 +75,8 @@ def vision_json(system: str, prompt: str, images: list[tuple[bytes, str]]) -> tu
     """`images` is a list of (bytes, mime). The images are actually sent, unlike the old agent."""
     if not config.VISION_MODEL:
         raise AgentUnavailable("ICCLEX_VISION_MODEL is not set, so no vision model is configured")
+    if len(images) > config.VISION_MAX_IMAGES:
+        raise ValueError(f"{len(images)} images in one call; the vision model takes {config.VISION_MAX_IMAGES}")
     content: list[dict] = [{"type": "text", "text": prompt}]
     for data, mime in images:
         b64 = base64.b64encode(data).decode()
@@ -74,12 +84,13 @@ def vision_json(system: str, prompt: str, images: list[tuple[bytes, str]]) -> tu
     try:
         resp = _client().chat.completions.create(
             model=config.VISION_MODEL, temperature=0.0, response_format={"type": "json_object"},
+            max_completion_tokens=config.VISION_MAX_TOKENS,
             messages=[{"role": "system", "content": system}, {"role": "user", "content": content}],
         )
     except AgentUnavailable:
         raise
     except Exception as exc:
-        raise AgentUnavailable(f"vision model call failed: {exc}") from exc
+        raise _fail("vision model call", exc) from exc
     return _json_from(resp.choices[0].message.content or ""), config.VISION_MODEL
 
 
@@ -97,7 +108,7 @@ def transcribe(path, filename: str) -> tuple[dict, str]:
     except AgentUnavailable:
         raise
     except Exception as exc:
-        raise AgentUnavailable(f"transcription failed: {exc}") from exc
+        raise _fail("transcription", exc) from exc
     return {
         "text": out.text, "language": getattr(out, "language", None),
         "duration": getattr(out, "duration", None),

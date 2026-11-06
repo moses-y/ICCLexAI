@@ -165,6 +165,7 @@ erDiagram
         TEXT model
         TEXT model_version
         TEXT error
+        DATETIME not_before
         DATETIME started_at
         DATETIME finished_at
         DATETIME created_at

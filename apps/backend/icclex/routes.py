@@ -220,6 +220,24 @@ def evidence_content(evidence_id: uuid.UUID, case: Case = Depends(get_case), ses
                         headers={"X-Content-Type-Options": "nosniff"})
 
 
+@router.post("/cases/{case_id}/evidence/{evidence_id}/rerun")
+def rerun_evidence(evidence_id: uuid.UUID, case: Case = Depends(get_case), session: Session = Depends(get_session)):
+    """Re-queue the failed analysis steps for one file, for example after a network outage."""
+    if case.status == "filed_by_user":
+        raise HTTPException(409, "this case is marked as filed; start a new case for new material")
+    ev = session.get(Evidence, evidence_id)
+    if not ev or ev.case_id != case.id:
+        raise HTTPException(404, "evidence not found")
+    agents = jobs.rerun_failed(session, ev)
+    if not agents:
+        raise HTTPException(409, "no failed analysis steps to re-run for this file")
+    _invalidate_outputs(session, case)
+    case.status = "analysing"
+    custody.record(session, case.id, "reanalysis_requested", actor_type="user", actor_ref="anonymous",
+                   evidence_id=ev.id, detail={"agents": agents})
+    return {"evidence_id": str(ev.id), "requeued": agents}
+
+
 # ---- findings -------------------------------------------------------------------------------------
 
 @router.get("/cases/{case_id}/findings")

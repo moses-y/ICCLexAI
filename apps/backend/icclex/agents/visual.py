@@ -6,8 +6,6 @@ from .. import config
 from .frames import downscaled_jpeg, extract_keyframes
 from .llm import vision_json
 
-BATCH = 4
-
 SYSTEM = (
     "You describe photos and video frames for a human who is documenting events. Rules: describe only what "
     "is visible, in neutral words. Count people but never identify anyone, and do not guess ethnicity, "
@@ -41,8 +39,8 @@ def run(ctx: AgentContext) -> AgentResult:
         if not frames:
             raise AgentUnavailable("no frames could be read from the video")
         findings, artefacts, model = [], [], None
-        for i in range(0, len(frames), BATCH):
-            batch = frames[i:i + BATCH]
+        for i in range(0, len(frames), config.VISION_MAX_IMAGES):
+            batch = frames[i:i + config.VISION_MAX_IMAGES]
             times = [t for t, _ in batch]
             data, model = vision_json(
                 SYSTEM, f"These are frames from one video at {times} seconds. Describe what happens across them.",

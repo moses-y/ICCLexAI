@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from . import config, custody, jobs
 from .agents import REGISTRY
-from .agents.base import AgentContext, AgentResult, AgentUnavailable
+from .agents.base import AgentContext, AgentResult, AgentTransient, AgentUnavailable
 from .db import session_scope
 from .models import AnalysisJob, Artefact, Case, Evidence, Finding
 from .storage import LocalStorage, get_storage
@@ -68,12 +68,14 @@ def process_one(storage: LocalStorage | None = None) -> bool:
 def _run(job_id: uuid.UUID, agent: str, ctx: AgentContext, storage: LocalStorage) -> bool:
     try:
         result = REGISTRY[agent](ctx)
-        error, ok, retry = None, True, False
+        error, ok, retry, transient = None, True, False, False
+    except AgentTransient as exc:
+        result, error, ok, retry, transient = None, str(exc), False, True, True  # network or rate limit: later
     except AgentUnavailable as exc:
-        result, error, ok, retry = None, str(exc), False, False  # won't succeed on retry: no key, no consent
+        result, error, ok, retry, transient = None, str(exc), False, False, False  # won't succeed on retry: no key, no consent
     except Exception as exc:  # a bug or a bad file: retry, then fail loudly
         log.exception("agent %s crashed on %s", agent, ctx.evidence_id)
-        result, error, ok, retry = None, f"{type(exc).__name__}: {exc}", False, True
+        result, error, ok, retry, transient = None, f"{type(exc).__name__}: {exc}", False, True, False
 
     with session_scope() as session:
         job = session.get(AnalysisJob, job_id)
@@ -86,7 +88,7 @@ def _run(job_id: uuid.UUID, agent: str, ctx: AgentContext, storage: LocalStorage
                            detail={"job_id": str(job.id), "findings": len(result.findings), "model": result.model,
                                    "notes": result.notes})
         else:
-            jobs.finish_job(session, job, ok=False, error=error, retry=retry)
+            jobs.finish_job(session, job, ok=False, error=error, retry=retry, transient=transient)
             if job.status == "failed":
                 custody.record(session, ev.case_id, "analysis_failed", actor_type="agent", actor_ref=agent,
                                evidence_id=ev.id, detail={"job_id": str(job.id), "error": error})

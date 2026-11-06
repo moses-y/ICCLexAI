@@ -86,13 +86,14 @@ def test_a_date_that_disagrees_with_a_file_is_put_to_the_submitter(client, case,
 def test_health_fails_when_migrations_are_behind(client):
     assert client.get("/api/health").json()["status"] == "healthy"
     with engine.begin() as conn:
+        head = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
         conn.execute(text("UPDATE alembic_version SET version_num = '0001'"))
     try:
         r = client.get("/api/health")
         assert r.status_code == 503 and "migrations behind" in r.json()["error"]
     finally:
         with engine.begin() as conn:
-            conn.execute(text("UPDATE alembic_version SET version_num = '0002'"))
+            conn.execute(text("UPDATE alembic_version SET version_num = :v"), {"v": head})
     assert client.get("/api/health").status_code == 200
 
 

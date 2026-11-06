@@ -40,7 +40,7 @@ CITABLE_STATUSES = ("confirmed", "edited")
 ARTEFACT_KINDS = ("keyframe", "thumbnail", "transcript_file", "stripped_copy", "summary_pdf", "manifest", "package_zip")
 CUSTODY_EVENT_TYPES = (
     "case_created", "received", "hash_verified", "hash_mismatch", "analysed", "analysis_failed",
-    "finding_changed", "exported", "package_built", "filed",
+    "finding_changed", "exported", "package_built", "filed", "reanalysis_requested",
 )
 GENESIS_HASH = "0" * 64
 
@@ -115,6 +115,8 @@ class AnalysisJob(Base):
     model: Mapped[str | None] = mapped_column(Text)
     model_version: Mapped[str | None] = mapped_column(Text)
     error: Mapped[str | None] = mapped_column(Text)
+    # A job retried after a network error or rate limit is not claimed again before this time.
+    not_before: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created()

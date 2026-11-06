@@ -32,6 +32,7 @@ def requeue_stale(session: Session) -> int:
 CLAIM_SQL = text("""
     SELECT j.id FROM analysis_job j
     WHERE j.status = 'queued'
+      AND (j.not_before IS NULL OR j.not_before <= now())
       AND (j.depends_on_agent IS NULL OR NOT EXISTS (
             SELECT 1 FROM analysis_job d
             WHERE d.evidence_id = j.evidence_id AND d.agent = j.depends_on_agent
@@ -56,11 +57,16 @@ def claim_next(session: Session) -> AnalysisJob | None:
 
 
 def finish_job(session: Session, job: AnalysisJob, *, ok: bool, error: str | None = None,
-               model: str | None = None, model_version: str | None = None, retry: bool = False) -> None:
+               model: str | None = None, model_version: str | None = None, retry: bool = False,
+               transient: bool = False) -> None:
     job.model, job.model_version = model, model_version
     job.error = error
     if not ok and retry and job.attempts < config.JOB_MAX_ATTEMPTS:
         job.status = "queued"
+        if not transient:  # a crash is retried at once; waiting would not change a bad file
+            return
+        delay = config.JOB_RETRY_DELAYS_S[min(job.attempts, len(config.JOB_RETRY_DELAYS_S)) - 1]
+        job.not_before = datetime.now(UTC) + timedelta(seconds=delay)
         return
     job.status = "done" if ok else "failed"
     job.finished_at = datetime.now(UTC)
@@ -71,3 +77,16 @@ def evidence_status(session: Session, evidence_id: uuid.UUID) -> str:
     if statuses & {"queued", "running"}:
         return "analysing"
     return "failed" if statuses == {"failed"} else "analysed"
+
+
+def rerun_failed(session: Session, evidence: Evidence) -> list[str]:
+    """Put an evidence item's failed jobs back in the queue with a fresh attempt count. Jobs that finished
+    are left alone: their findings are immutable, and re-running them would duplicate them."""
+    failed = list(session.execute(select(AnalysisJob).where(
+        AnalysisJob.evidence_id == evidence.id, AnalysisJob.status == "failed")).scalars())
+    for job in failed:
+        job.status, job.attempts, job.error, job.not_before, job.finished_at = "queued", 0, None, None, None
+    if failed:
+        evidence.status = "analysing"
+    session.flush()
+    return [j.agent for j in failed]

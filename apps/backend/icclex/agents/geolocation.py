@@ -8,7 +8,7 @@ import threading
 import time
 
 from .. import config
-from .base import AgentContext, AgentResult, AgentUnavailable, FindingDraft, require_consent
+from .base import AgentContext, AgentResult, AgentTransient, AgentUnavailable, FindingDraft, require_consent
 from .frames import downscaled_jpeg, extract_keyframes
 from .llm import vision_json
 
@@ -64,7 +64,7 @@ def _images_for(ctx: AgentContext) -> list[tuple[bytes, str]]:
     if ctx.mime.startswith("image/"):
         return [(downscaled_jpeg(ctx.path), "image/jpeg")]
     if ctx.mime.startswith("video/"):
-        return [(jpg, "image/jpeg") for _, jpg in extract_keyframes(ctx.path, 3)]
+        return [(jpg, "image/jpeg") for _, jpg in extract_keyframes(ctx.path, config.VISION_MAX_IMAGES)]
     return []
 
 
@@ -89,6 +89,8 @@ def run(ctx: AgentContext) -> AgentResult:
             require_consent(ctx)
             place = reverse_geocode(lat, lon)
             out.append(FindingDraft("place", place, "extracted", geom=(lat, lon)))
+        except AgentTransient:
+            raise  # retry the whole job later rather than record "not analysed"
         except AgentUnavailable as exc:
             notes.append(f"place name for the GPS point not looked up: {exc}")
 

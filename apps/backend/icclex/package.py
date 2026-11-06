@@ -31,10 +31,32 @@ DISCLAIMER = (
     "the ICC has jurisdiction. AI-suggested statements are marked and were confirmed by the submitter."
 )
 OTPLINK_CAVEAT = (
-    "The field names below follow ICCLexAI's provisional map of the OTPLink form (incident name and date, "
-    "location on a map, description, files). OTPLink is in English and was last checked against reports from "
-    "2023: compare each heading with the live form before pasting."
+    "The headings below follow the live OTPLink form as rendered on 2026-11-06 (otplink.icc-cpi.int). The form "
+    "can change: compare each heading with the live form before pasting."
 )
+# Limits shown on the live OTPLink form on 2026-11-06. The 2023 reports this tool was first built from only gave
+# "about 4 GB", which is the total, not the per-file limit.
+OTPLINK_MAX_FILE_BYTES = 2 * 1000**3
+OTPLINK_MAX_TOTAL_BYTES = 4 * 1000**3
+OTPLINK_MAX_FILES = 1000
+OTPLINK_INCIDENT_NAME_MAX_CHARS = 100
+OTPLINK_SUMMARY_MAX_BYTES = int(1.8 * 1000**2)
+
+
+def _otplink_limit_warnings(name: str, summary: str, rows: list[dict]) -> list[str]:
+    out = []
+    if len(name) > OTPLINK_INCIDENT_NAME_MAX_CHARS:
+        out.append(f"Incident name is {len(name)} characters; OTPLink accepts {OTPLINK_INCIDENT_NAME_MAX_CHARS}.")
+    if len(summary.encode()) > OTPLINK_SUMMARY_MAX_BYTES:
+        out.append("Factual summary is larger than OTPLink's 1.8 MB limit.")
+    big = [r["file_in_package"] for r in rows if r["size_bytes"] > OTPLINK_MAX_FILE_BYTES]
+    if big:
+        out.append("Over OTPLink's 2.0 GB per-file limit: " + ", ".join(big) + ".")
+    if sum(r["size_bytes"] for r in rows) > OTPLINK_MAX_TOTAL_BYTES:
+        out.append("Files total more than OTPLink's 4.0 GB per submission; split them across submissions.")
+    if len(rows) > OTPLINK_MAX_FILES:
+        out.append(f"{len(rows)} files; OTPLink accepts {OTPLINK_MAX_FILES} per submission.")
+    return out
 
 
 class PackageError(Exception):
@@ -207,13 +229,22 @@ def build_package(session: Session, case: Case, storage: LocalStorage, *, strip_
 
             name, when = _incident_text(case, timeline)
             loc = _point(case.incident_location)
+            limits = _otplink_limit_warnings(name, result.narrative.body, manifest_rows)
             fields = "\n".join([
-                "# OTPLink field text", "", f"> {OTPLINK_CAVEAT}", "", "## Incident name", name, "", "## Date of incident", when,
-                "", "## Location", (case.incident_location_text or "(not stated)") +
-                (f"\n\nMap pin: {loc[0]:.5f}, {loc[1]:.5f}" if loc else ""), "", "## Description", result.narrative.body, "",
-                "## Files, in the order to upload them", *[f"{r['label']}. {r['file_in_package']}  (SHA-256 {r['sha256_in_package']})"
-                                                           for r in manifest_rows], "",
-                "## Contact", "OTPLink allows an anonymous submission. Choose what is safe for you.", "",
+                "# OTPLink field text", "", f"> {OTPLINK_CAVEAT}", "",
+                "## Limits", *(limits or ["Within OTPLink's limits (2.0 GB per file, 4.0 GB and 1000 files per submission)."]), "",
+                "## Investigation", "Choose the situation from OTPLink's list; ICCLexAI does not pick it for you.", "",
+                "## Contact Name / Contact Email / Contact Phone",
+                "Or tick \"I want to make this submission anonymously\". Choose what is safe for you.", "",
+                f"## Incident Name (max {OTPLINK_INCIDENT_NAME_MAX_CHARS} characters)", name, "",
+                "## Factual Summary", result.narrative.body, "",
+                "## Date of Incident (Start Date / End Date)", when, "",
+                "## Language of the Item", "Choose the language of the attached material.", "",
+                "## Location of Incident", (case.incident_location_text or "(not stated)") +
+                (f"\n\nMap pin: {loc[0]:.5f}, {loc[1]:.5f}" if loc else ""), "",
+                "## Add Attachment(s), in this order", *[f"{r['label']}. {r['file_in_package']}  (SHA-256 {r['sha256_in_package']})"
+                                                       for r in manifest_rows], "",
+                "OTPLink asks that you do not use a VPN or proxy while submitting.", "",
                 "## Afterwards", "Record any reference OTPLink gives you in ICCLexAI, then mark the case as filed.", ""])
             readme = (f"{DISCLAIMER}\n\nBefore uploading, check each file's SHA-256 against manifest.json "
                       "(sha256sum on Linux and macOS, Get-FileHash on Windows).\n")

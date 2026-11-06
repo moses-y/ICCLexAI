@@ -191,3 +191,70 @@ def test_helpers():
 class _R:
     def __init__(self, num, den):
         self.num, self.den = num, den
+
+
+def test_video_frames_are_sent_in_batches_the_vision_model_accepts(monkeypatch):
+    from icclex.agents import visual
+    from icclex.agents.base import AgentContext
+
+    sizes = []
+    monkeypatch.setattr(visual, "require_consent", lambda ctx: None)
+    monkeypatch.setattr(visual, "extract_keyframes", lambda path, n: [(float(t), b"jpg") for t in range(n)])
+    monkeypatch.setattr(visual, "vision_json", lambda s, p, imgs: (sizes.append(len(imgs)) or {"description": "x"}, "m"))
+    ctx = AgentContext.__new__(AgentContext)
+    ctx.mime, ctx.path = "video/mp4", None
+    visual.run(ctx)
+    assert sizes and max(sizes) <= config.VISION_MAX_IMAGES and sum(sizes) == config.KEYFRAME_COUNT
+
+
+def test_too_many_images_in_one_vision_call_is_a_bug_not_a_model_outage(monkeypatch):
+    monkeypatch.setattr(config, "GROQ_API_KEY", "x")
+    monkeypatch.setattr(config, "VISION_MODEL", "m")
+    with pytest.raises(ValueError):
+        llm.vision_json("s", "p", [(b"img", "image/jpeg")] * (config.VISION_MAX_IMAGES + 1))
+
+
+def test_a_network_error_is_retried_later_not_failed_for_good(client, case, run_jobs, monkeypatch):
+    from icclex.agents.base import AgentTransient
+
+    def offline(ctx):
+        raise AgentTransient("vision model call failed: Connection error.")
+
+    monkeypatch.setitem(REGISTRY, "metadata", offline)
+    res = upload(client, case, "a.jpg", jpeg(), "image/jpeg")
+    run_jobs()
+    meta = jobs_by_agent(client, case, res["evidence_id"])["metadata"]
+    assert meta["status"] == "queued"  # waiting out JOB_RETRY_DELAYS_S, not claimed again straight away
+    case_id, headers = case
+    assert client.get(f"/api/cases/{case_id}", headers=headers).json()["status"] == "analysing"
+
+
+def test_a_failed_step_can_be_rerun_and_the_rerun_is_in_the_custody_log(client, case, run_jobs, monkeypatch):
+    calls = []
+
+    def flaky(ctx):
+        calls.append(1)
+        if len(calls) <= config.JOB_MAX_ATTEMPTS:
+            raise RuntimeError("corrupt file")
+        return REGISTRY_ORIGINAL["metadata"](ctx)
+
+    REGISTRY_ORIGINAL = dict(REGISTRY)
+    monkeypatch.setitem(REGISTRY, "metadata", flaky)
+    res = upload(client, case, "a.jpg", jpeg(), "image/jpeg")
+    run_jobs()
+    case_id, headers = case
+    eid = res["evidence_id"]
+    assert jobs_by_agent(client, case, eid)["metadata"]["status"] == "failed"
+
+    r = client.post(f"/api/cases/{case_id}/evidence/{eid}/rerun", headers=headers)
+    assert r.status_code == 200 and "metadata" in r.json()["requeued"]
+    run_jobs()
+    assert jobs_by_agent(client, case, eid)["metadata"]["status"] == "done"
+    assert kinds(findings(client, case, eid), "gps")
+    events = client.get(f"/api/cases/{case_id}/custody", headers=headers).json()["events"]
+    assert any(e["event_type"] == "reanalysis_requested" for e in events)
+    # Nothing left to re-run is a conflict, not a silent no-op (visual still fails here: no key in tests):
+    monkeypatch.setitem(REGISTRY, "visual", lambda ctx: REGISTRY_ORIGINAL["integrity"](ctx))
+    client.post(f"/api/cases/{case_id}/evidence/{eid}/rerun", headers=headers)
+    run_jobs()
+    assert client.post(f"/api/cases/{case_id}/evidence/{eid}/rerun", headers=headers).status_code == 409

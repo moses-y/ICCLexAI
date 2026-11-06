@@ -36,6 +36,20 @@ GROQ_MAX_RETRIES = int(os.getenv("ICCLEX_GROQ_MAX_RETRIES", "5"))
 TRANSCRIBE_MODEL = os.getenv("ICCLEX_TRANSCRIBE_MODEL") or "whisper-large-v3-turbo"
 # Groq's Whisper endpoint rejects files above this size.
 TRANSCRIBE_MAX_BYTES = 25 * 1024 * 1024
+# Spoken languages a transcript is accepted in, as code -> the start of the name Groq's Whisper reports.
+# On 2026-11-06 Whisper turned two Nairobi clips into Spanish ("¡Adiós!") and Malay ("Terima kasih"), and
+# Swahili speech under noise into Greek letters; a transcript in any other language is withheld.
+SPEECH_LANGUAGES = dict(pair.split(":") for pair in os.getenv(
+    "ICCLEX_SPEECH_LANGUAGES", "en:english,sw:swahili").split(","))
+# Floors set by evals/transcription on 2026-11-06 (180 FLEURS clips: Swahili and English, clean, pink noise and
+# crowd babble, plus 30 clips with no speech). At the first guesses (-1.0 auto, -0.5 forced) 57% of the no-speech
+# clips got a transcript, mostly "so" over several seconds of noise. Raising the auto floor to -0.6 cost no good
+# transcript. Invented text also has almost no words for its length: good transcripts had at least 0.82 words per
+# second, invented ones a median of 0.12 (the real case's "Muzika" was one word in 10.5 s). Whisper reports
+# invented text as covering the whole clip, and no_speech_prob was 0.00 throughout, so neither can be used.
+TRANSCRIBE_MIN_LOGPROB = -0.6
+TRANSCRIBE_FORCED_MIN_LOGPROB = -0.5
+TRANSCRIBE_MIN_WORDS_PER_SECOND = 0.5
 
 # Nominatim's usage policy requires an identifying User-Agent and at most 1 request per second.
 NOMINATIM_USER_AGENT = os.getenv("ICCLEX_NOMINATIM_USER_AGENT", "icclexai-evidence-tool")

@@ -19,7 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import custody
-from .models import Artefact, Case, CustodyEvent, Evidence, Finding, NarrativeClaim, SubmissionPackage
+from .models import AnalysisJob, Artefact, Case, CustodyEvent, Evidence, Finding, NarrativeClaim, SubmissionPackage
 from .narrative import NarrativeResult, attribute, build_narrative, citable_findings
 from .storage import LocalStorage
 from .strip import strip_metadata
@@ -49,7 +49,7 @@ def _otplink_limit_warnings(name: str, summary: str, rows: list[dict]) -> list[s
         out.append(f"Incident name is {len(name)} characters; OTPLink accepts {OTPLINK_INCIDENT_NAME_MAX_CHARS}.")
     if len(summary.encode()) > OTPLINK_SUMMARY_MAX_BYTES:
         out.append("Factual summary is larger than OTPLink's 1.8 MB limit.")
-    big = [r["file_in_package"] for r in rows if r["size_bytes"] > OTPLINK_MAX_FILE_BYTES]
+    big = [r["file_in_package"] or r["original_name"] for r in rows if r["size_bytes"] > OTPLINK_MAX_FILE_BYTES]
     if big:
         out.append("Over OTPLink's 2.0 GB per-file limit: " + ", ".join(big) + ".")
     if sum(r["size_bytes"] for r in rows) > OTPLINK_MAX_TOTAL_BYTES:
@@ -57,6 +57,101 @@ def _otplink_limit_warnings(name: str, summary: str, rows: list[dict]) -> list[s
     if len(rows) > OTPLINK_MAX_FILES:
         out.append(f"{len(rows)} files; OTPLink accepts {OTPLINK_MAX_FILES} per submission.")
     return out
+
+# Every model is called through agents/llm.py, which only talks to Groq.
+MODEL_PROVIDER = "Groq"
+AI_USE_STATEMENT = (
+    "AI use: models read the files and drafted descriptions, place clues, transcripts, document summaries and "
+    "the written account. A person reviewed every finding; only findings they confirmed or edited are in this "
+    "package, and every sentence of the account cites them. AI did not identify anyone, did not decide whether "
+    "a crime was committed, and did not submit anything. ai_provenance.json lists which model produced what."
+)
+
+
+def _root(f: Finding, by_id: dict) -> Finding:
+    """An edit is a new row pointing at the one it replaced; the AI origin is on the first row."""
+    while f.supersedes_id and f.supersedes_id in by_id:
+        f = by_id[f.supersedes_id]
+    return f
+
+
+def _ai_provenance(case: Case, labels: dict, findings_by_id: dict, jobs_by_id: dict, result) -> dict:
+    included, models = [], {}
+    for f in findings_by_id.values():
+        if f.status not in ("confirmed", "edited"):
+            continue
+        origin = _root(f, findings_by_id)
+        job = jobs_by_id.get(origin.job_id)
+        if job is not None:
+            # A step's model is recorded per job, not per finding. The geolocation job ran the vision model and
+            # also looked the GPS up in OpenStreetMap, and the first real package (2026-11-06) credited that place
+            # name to the model. Only "inferred" findings come from a model; "extracted" ones are read by code.
+            by_model = origin.source == "inferred" and job.model
+            producer = {"type": "model" if by_model else "deterministic", "step": job.agent,
+                        "model": job.model if by_model else None}
+        elif (origin.value or {}).get("extracted_by_model"):
+            producer = {"type": "model", "step": "interview", "model": origin.value["extracted_by_model"]}
+        else:
+            producer = {"type": "submitter", "step": "typed by the submitter", "model": None}
+        if producer["model"]:
+            models.setdefault(producer["model"], set()).add(producer["step"])
+        included.append({
+            "finding_id": str(f.id), "evidence": labels.get(f.evidence_id), "kind": f.kind,
+            "source": f.source, "produced_by": producer,
+            "human_review": "edited by the submitter" if f.supersedes_id else "confirmed by the submitter",
+            "reviewed_at": f.confirmed_at.isoformat(timespec="seconds") if f.confirmed_at else None})
+    if result.narrative.model:
+        models.setdefault(result.narrative.model, set()).add("narrative")
+    return {
+        "statement": AI_USE_STATEMENT,
+        "external_processing_consent": case.external_processing_consent,
+        "models": [{"model": m, "provider": MODEL_PROVIDER, "used_for": sorted(steps)} for m, steps in sorted(models.items())],
+        "narrative": {"version": result.narrative.version, "drafted_by_model": result.narrative.model,
+                      "sentences_removed_for_lacking_a_source": len(result.dropped),
+                      "rule": "every sentence cites confirmed or edited findings"},
+        "findings": sorted(included, key=lambda r: (r["evidence"] or "", r["kind"])),
+        "not_done_by_ai": ["identifying people", "legal conclusions or jurisdiction", "submitting to the ICC"],
+    }
+
+
+def _otplink_fields(case: Case, name: str, when: str, loc, summary: str, rows: list[dict]) -> dict:
+    """The OTPLink form, in its order, with what to put in each field. otplink_fields.md is rendered from this
+    and the filing assistant on the Package step reads it from the package, so the two cannot disagree."""
+    place = case.incident_location_text or "(not stated)"
+    return {
+        "form_checked_on": "2026-11-06",
+        "caveat": OTPLINK_CAVEAT,
+        "limit_warnings": _otplink_limit_warnings(name, summary, rows),
+        "fields": [
+            {"field": "Investigation", "value": None,
+             "note": "Choose the situation from OTPLink's list; ICCLexAI does not pick it for you."},
+            {"field": "Contact Name / Contact Email / Contact Phone", "value": None,
+             "note": 'Or tick "I want to make this submission anonymously". Choose what is safe for you.'},
+            {"field": "Incident Name", "value": name, "max_chars": OTPLINK_INCIDENT_NAME_MAX_CHARS},
+            {"field": "Factual Summary", "value": summary, "max_bytes": OTPLINK_SUMMARY_MAX_BYTES},
+            {"field": "Date of Incident (Start Date / End Date)", "value": when},
+            {"field": "Language of the Item", "value": None, "note": "Choose the language of the attached material."},
+            {"field": "Location of Incident", "value": place,
+             "note": f"Then drag the map pin to {loc[0]:.5f}, {loc[1]:.5f}." if loc else "Then place the map pin."},
+        ],
+        "attachments": [{"label": r["label"], "original_name": r["original_name"], "file_in_package": r["file_in_package"],
+                         "sha256": r["sha256_in_package"], "size_bytes": r["size_bytes"]} for r in rows],
+        "notes": ["OTPLink asks that you do not use a VPN or proxy while submitting."],
+    }
+
+
+def _otplink_markdown(o: dict) -> str:
+    out = ["# OTPLink field text", "", f"> {o['caveat']}", "", "## Limits",
+           *(o["limit_warnings"] or ["Within OTPLink's limits (2.0 GB per file, 4.0 GB and 1000 files per submission)."]), ""]
+    for f in o["fields"]:
+        limit = f" (max {f['max_chars']} characters)" if f.get("max_chars") else ""
+        out += [f"## {f['field']}{limit}", *([f["value"]] if f["value"] is not None else []),
+                *([f["note"]] if f.get("note") else []), ""]
+    out += ["## Add Attachment(s), in this order",
+            *[f"{a['label']}. {a['file_in_package'] or 'your own copy of ' + a['original_name']}  (SHA-256 {a['sha256']})"
+              for a in o["attachments"]], "", *o["notes"], "",
+            "## Afterwards", "Record any reference OTPLink gives you in ICCLexAI, then mark the case as filed.", ""]
+    return "\n".join(out)
 
 
 class PackageError(Exception):
@@ -151,7 +246,7 @@ def _custody_csv(events: list[CustodyEvent]) -> bytes:
 
 
 def build_package(session: Session, case: Case, storage: LocalStorage, *, strip_metadata_on_export: bool,
-                  use_model: bool) -> tuple[SubmissionPackage, NarrativeResult]:
+                  use_model: bool, include_originals: bool = False) -> tuple[SubmissionPackage, NarrativeResult]:
     evidence = list(session.execute(select(Evidence).where(Evidence.case_id == case.id)
                                     .order_by(Evidence.received_at, Evidence.original_name)).scalars())
     if not evidence:
@@ -179,6 +274,8 @@ def build_package(session: Session, case: Case, storage: LocalStorage, *, strip_
         if f.status in ("confirmed", "edited") and f.evidence_id:
             per_evidence.setdefault(f.evidence_id, []).append(f)
     labels = {e.id: f"E{i}" for i, e in enumerate(evidence, start=1)}
+    jobs_by_id = {j.id: j for j in session.execute(select(AnalysisJob).where(
+        AnalysisJob.evidence_id.in_([e.id for e in evidence]))).scalars()}
     ok_chain, chain_problem = custody.verify_chain(session, case.id)
 
     manifest_rows, geojson = [], {"type": "FeatureCollection", "features": []}
@@ -201,8 +298,11 @@ def build_package(session: Session, case: Case, storage: LocalStorage, *, strip_
                                        evidence_id=e.id, detail={"metadata_removed": True, "sha256_original": e.sha256,
                                                                  "sha256_exported": packaged_sha})
                 if not stripped:
-                    z.write(src, member)
                     packaged_sha = e.sha256
+                    if include_originals:
+                        z.write(src, member)
+                    else:
+                        member = None  # the person files the copy on their own device, checked by sha256_original
                 manifest_rows.append({
                     "label": labels[e.id], "evidence_id": str(e.id), "original_name": e.original_name,
                     "mime": e.mime_sniffed, "size_bytes": e.size_bytes, "sha256_original": e.sha256,
@@ -229,25 +329,14 @@ def build_package(session: Session, case: Case, storage: LocalStorage, *, strip_
 
             name, when = _incident_text(case, timeline)
             loc = _point(case.incident_location)
-            limits = _otplink_limit_warnings(name, result.narrative.body, manifest_rows)
-            fields = "\n".join([
-                "# OTPLink field text", "", f"> {OTPLINK_CAVEAT}", "",
-                "## Limits", *(limits or ["Within OTPLink's limits (2.0 GB per file, 4.0 GB and 1000 files per submission)."]), "",
-                "## Investigation", "Choose the situation from OTPLink's list; ICCLexAI does not pick it for you.", "",
-                "## Contact Name / Contact Email / Contact Phone",
-                "Or tick \"I want to make this submission anonymously\". Choose what is safe for you.", "",
-                f"## Incident Name (max {OTPLINK_INCIDENT_NAME_MAX_CHARS} characters)", name, "",
-                "## Factual Summary", result.narrative.body, "",
-                "## Date of Incident (Start Date / End Date)", when, "",
-                "## Language of the Item", "Choose the language of the attached material.", "",
-                "## Location of Incident", (case.incident_location_text or "(not stated)") +
-                (f"\n\nMap pin: {loc[0]:.5f}, {loc[1]:.5f}" if loc else ""), "",
-                "## Add Attachment(s), in this order", *[f"{r['label']}. {r['file_in_package']}  (SHA-256 {r['sha256_in_package']})"
-                                                       for r in manifest_rows], "",
-                "OTPLink asks that you do not use a VPN or proxy while submitting.", "",
-                "## Afterwards", "Record any reference OTPLink gives you in ICCLexAI, then mark the case as filed.", ""])
-            readme = (f"{DISCLAIMER}\n\nBefore uploading, check each file's SHA-256 against manifest.json "
-                      "(sha256sum on Linux and macOS, Get-FileHash on Windows).\n")
+            otplink = _otplink_fields(case, name, when, loc, result.narrative.body, manifest_rows)
+            fields = _otplink_markdown(otplink)
+            provenance = _ai_provenance(case, labels, findings_by_id, jobs_by_id, result)
+            copies = ("Copies of your files are in originals/." if any(r["file_in_package"] for r in manifest_rows) else
+                      "Your files are not in this package: upload the copies on your own device.")
+            readme = (f"{DISCLAIMER}\n\n{AI_USE_STATEMENT}\n\n{copies} Before uploading, check that each file's SHA-256 "
+                      "matches sha256_in_package in manifest.json (sha256sum on Linux and macOS, Get-FileHash on "
+                      "Windows); a match proves it is the same file ICCLexAI analysed.\n")
             z.writestr("README_FIRST.txt", readme)
             z.writestr("manifest.json", manifest_json)
             z.writestr("manifest.csv", mcsv.getvalue())
@@ -255,6 +344,8 @@ def build_package(session: Session, case: Case, storage: LocalStorage, *, strip_
             z.writestr("evidence_map.geojson", json.dumps(geojson, indent=2))
             z.writestr("custody_log.csv", _custody_csv(events))
             z.writestr("otplink_fields.md", fields)
+            z.writestr("otplink_fields.json", json.dumps(otplink, indent=2, ensure_ascii=False))
+            z.writestr("ai_provenance.json", json.dumps(provenance, indent=2))
         stored_zip = storage.save_file(case.id, "packages", f"icclex_package_{str(case.id)[:8]}.zip", zpath)
 
     for old in session.execute(select(SubmissionPackage).where(SubmissionPackage.case_id == case.id,

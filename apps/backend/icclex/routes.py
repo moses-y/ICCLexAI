@@ -17,7 +17,7 @@ from .db import SessionLocal
 from .models import (AnalysisJob, Artefact, Case, CustodyEvent, Evidence, Finding, Narrative, Submitter,
                      SubmissionPackage)
 from .package import PackageError, build_package
-from .schemas import (BulkAction, CaseCreate, CaseUpdate, FiledRequest, FindingAction, InterviewMessage,
+from .schemas import (BulkAction, RerunRequest, CaseCreate, CaseUpdate, FiledRequest, FindingAction, InterviewMessage,
                       PackageRequest, StatedFact)
 from .sniff import UNKNOWN, sniff_mime
 from .storage import LocalStorage, UploadTooLarge, get_storage
@@ -221,21 +221,23 @@ def evidence_content(evidence_id: uuid.UUID, case: Case = Depends(get_case), ses
 
 
 @router.post("/cases/{case_id}/evidence/{evidence_id}/rerun")
-def rerun_evidence(evidence_id: uuid.UUID, case: Case = Depends(get_case), session: Session = Depends(get_session)):
-    """Re-queue the failed analysis steps for one file, for example after a network outage."""
+def rerun_evidence(evidence_id: uuid.UUID, body: RerunRequest | None = None, case: Case = Depends(get_case),
+                   session: Session = Depends(get_session)):
+    """Re-queue the failed analysis steps for one file (for example after a network outage), plus any
+    finished steps named in the body (for example after the step was improved)."""
     if case.status == "filed_by_user":
         raise HTTPException(409, "this case is marked as filed; start a new case for new material")
     ev = session.get(Evidence, evidence_id)
     if not ev or ev.case_id != case.id:
         raise HTTPException(404, "evidence not found")
-    agents = jobs.rerun_failed(session, ev)
+    agents, superseded = jobs.rerun(session, ev, (body.agents if body else []))
     if not agents:
-        raise HTTPException(409, "no failed analysis steps to re-run for this file")
+        raise HTTPException(409, "nothing to re-run for this file: no step failed and none was named")
     _invalidate_outputs(session, case)
     case.status = "analysing"
     custody.record(session, case.id, "reanalysis_requested", actor_type="user", actor_ref="anonymous",
-                   evidence_id=ev.id, detail={"agents": agents})
-    return {"evidence_id": str(ev.id), "requeued": agents}
+                   evidence_id=ev.id, detail={"agents": agents, "superseded_findings": superseded})
+    return {"evidence_id": str(ev.id), "requeued": agents, "superseded_findings": superseded}
 
 
 # ---- findings -------------------------------------------------------------------------------------
@@ -334,6 +336,7 @@ def make_package(body: PackageRequest, case: Case = Depends(get_case), session: 
                  storage: LocalStorage = Depends(get_storage)):
     try:
         pkg, result = build_package(session, case, storage, strip_metadata_on_export=body.strip_metadata,
+                                    include_originals=body.include_originals,
                                     use_model=bool(case.external_processing_consent and config.GROQ_API_KEY))
     except PackageError as exc:
         raise HTTPException(409, str(exc)) from exc
@@ -351,6 +354,24 @@ def download_package(case: Case = Depends(get_case), session: Session = Depends(
     art = session.get(Artefact, pkg.zip_artefact_id)
     return FileResponse(storage.path(art.storage_uri), media_type="application/zip",
                         filename=f"icclex_package_v{pkg.version}.zip", headers={"X-Package-SHA256": art.sha256})
+
+
+@router.get("/cases/{case_id}/package/otplink")
+def package_otplink_fields(case: Case = Depends(get_case), session: Session = Depends(get_session),
+                           storage: LocalStorage = Depends(get_storage)):
+    """The OTPLink field values of the current package, read from the package itself so the filing assistant
+    shows exactly what was built."""
+    import json
+    import zipfile
+
+    pkg = session.execute(select(SubmissionPackage).where(SubmissionPackage.case_id == case.id,
+                                                          SubmissionPackage.status == "current")).scalar()
+    if not pkg:
+        raise HTTPException(404, "no current package: build one first")
+    with zipfile.ZipFile(storage.path(session.get(Artefact, pkg.zip_artefact_id).storage_uri)) as z:
+        if "otplink_fields.json" not in z.namelist():
+            raise HTTPException(409, "this package was built before the filing assistant existed: rebuild it")
+        return json.loads(z.read("otplink_fields.json"))
 
 
 @router.post("/cases/{case_id}/filed")

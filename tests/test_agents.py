@@ -258,3 +258,59 @@ def test_a_failed_step_can_be_rerun_and_the_rerun_is_in_the_custody_log(client, 
     client.post(f"/api/cases/{case_id}/evidence/{eid}/rerun", headers=headers)
     run_jobs()
     assert client.post(f"/api/cases/{case_id}/evidence/{eid}/rerun", headers=headers).status_code == 409
+
+
+def _whisper(language, text, logprob, duration=4):
+    return {"text": text, "language": language, "duration": duration,
+            "segments": [{"start": 0, "end": 4, "text": text, "avg_logprob": logprob}]}
+
+
+@pytest.mark.parametrize("passes, expected", [
+    # Measured on 2026-11-06: a Nairobi clip came back as Spanish, and forced to Swahili as repeated filler.
+    ({None: ("Spanish", "¡Adiós!", -1.15), "en": ("English", "Police", -1.45), "sw": ("Swahili", "Kikisha", -0.66)}, None),
+    ({None: ("English", "The police arrived.", -0.13)}, "The police arrived."),
+    # A real Nairobi clip forced to Swahili gave one confident word, "Muzika", for 10.5 s of audio.
+    ({None: ("Indonesian", "Terima kasih.", -0.36), "en": ("English", "So", -1.36),
+      "sw": ("Swahili (macrolanguage)", "Muzika", -0.31, 10.45)}, None),
+    # Noisy Swahili was detected as Greek; forcing Swahili recovered it.
+    ({None: ("Modern Greek", "Πολίσι", -0.65), "en": ("English", "Police", -1.69),
+      "sw": ("Swahili (macrolanguage)", "Polisi walifika sokoni.", -0.31)}, "Polisi walifika sokoni."),
+])
+def test_a_transcript_is_kept_only_in_an_expected_language_with_enough_confidence(monkeypatch, tmp_path, passes, expected):
+    from icclex.agents import audio_video
+
+    monkeypatch.setattr(audio_video, "transcribe", lambda path, name, language=None: (_whisper(*passes[language]), "w"))
+    result, _, tried = audio_video._trusted_transcript(tmp_path / "a.mp3")
+    assert (result["text"] if result else None) == expected
+    assert tried[0].startswith("auto-detected")
+
+
+def test_a_finished_step_can_be_reanalysed_and_its_old_findings_are_superseded_not_deleted(client, case, run_jobs):
+    res = upload(client, case, "a.jpg", jpeg(), "image/jpeg")
+    run_jobs()
+    case_id, headers = case
+    eid = res["evidence_id"]
+    gps_before = kinds(findings(client, case, eid), "gps")[0]
+    client.post(f"/api/cases/{case_id}/findings/bulk", headers=headers, json={"ids": [gps_before["id"]], "action": "confirm"})
+
+    r = client.post(f"/api/cases/{case_id}/evidence/{eid}/rerun", headers=headers, json={"agents": ["metadata"]})
+    assert r.status_code == 200 and "metadata" in r.json()["requeued"]
+    assert gps_before["id"] in r.json()["superseded_findings"]
+    run_jobs()
+    gps = {f["id"]: f["status"] for f in kinds(findings(client, case, eid), "gps")}
+    assert gps_before["id"] not in gps and list(gps.values()) == ["proposed"]  # the listing hides superseded rows
+    from icclex.db import session_scope
+    from icclex.models import Finding
+
+    with session_scope() as s:  # the old row is kept, only its status changed
+        assert s.get(Finding, __import__("uuid").UUID(gps_before["id"])).status == "superseded"
+    events = client.get(f"/api/cases/{case_id}/custody", headers=headers).json()["events"]
+    assert any(e["event_type"] == "reanalysis_requested" and gps_before["id"] in e["detail"]["superseded_findings"]
+               for e in events)
+
+
+def test_naming_an_unknown_step_to_reanalyse_is_rejected(client, case, run_jobs):
+    res = upload(client, case, "a.jpg", jpeg(), "image/jpeg")
+    case_id, headers = case
+    r = client.post(f"/api/cases/{case_id}/evidence/{res['evidence_id']}/rerun", headers=headers, json={"agents": ["bogus"]})
+    assert r.status_code == 422

@@ -101,6 +101,9 @@ export default function CaseApp() {
   }, [session, detail?.status, refresh])
 
   const begin = (s: Session) => { setStored(saveSession(s)); setSession(s) }
+  // Only the Files step had a "next" button; after Review the way on was the tabs at the top of a long page.
+  const go = (to: Step) => { setStep(to); window.scrollTo({ top: 0 }) }
+  const unreviewed = findings.filter(f => f.status === 'proposed').length
   const leave = () => { forgetSession(); setSession(null); setDetail(null); setFindings([]); setStep('evidence') }
 
   if (!session) return <StartScreen onSession={begin} />
@@ -121,16 +124,23 @@ export default function CaseApp() {
 
       <nav className="flex gap-1 overflow-x-auto" aria-label="Steps">
         {STEPS.map(s => (
-          <Button key={s.id} size="sm" variant={s.id === step ? 'default' : 'outline'} onClick={() => setStep(s.id)}>{s.label}</Button>
+          <Button key={s.id} size="sm" variant={s.id === step ? 'default' : 'outline'} onClick={() => go(s.id)}>{s.label}</Button>
         ))}
       </nav>
 
-      {step === 'evidence' && <EvidencePanel session={session} detail={detail} refresh={refresh} next={() => setStep('review')} />}
+      {step === 'evidence' && <EvidencePanel session={session} detail={detail} refresh={refresh} next={() => go('review')} />}
       {step === 'review' && (<>
         <FindingsPanel session={session} detail={detail} findings={findings} refresh={refresh} />
         <MapPanel session={session} detail={detail} findings={findings} refresh={refresh} />
+        <div className="flex flex-wrap items-center gap-3">
+          <Button onClick={() => go('account')}>Continue to your account</Button>
+          {unreviewed > 0 && <span className="text-sm text-gray-700">{unreviewed} not reviewed yet: they stay out of the package until you confirm them.</span>}
+        </div>
       </>)}
-      {step === 'account' && <StatementsPanel session={session} detail={detail} findings={findings} refresh={refresh} />}
+      {step === 'account' && (<>
+        <StatementsPanel session={session} detail={detail} findings={findings} refresh={refresh} />
+        <div><Button onClick={() => go('package')}>Continue to the package</Button></div>
+      </>)}
       {step === 'package' && <PackagePanel session={session} detail={detail} findings={findings} refresh={refresh} />}
     </div>
   )

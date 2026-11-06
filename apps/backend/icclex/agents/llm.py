@@ -94,7 +94,7 @@ def vision_json(system: str, prompt: str, images: list[tuple[bytes, str]]) -> tu
     return _json_from(resp.choices[0].message.content or ""), config.VISION_MODEL
 
 
-def transcribe(path, filename: str) -> tuple[dict, str]:
+def transcribe(path, filename: str, language: str | None = None) -> tuple[dict, str]:
     if path.stat().st_size > config.TRANSCRIBE_MAX_BYTES:
         raise AgentUnavailable(
             f"file is {path.stat().st_size // (1024 * 1024)} MB, above the {config.TRANSCRIBE_MAX_BYTES // (1024 * 1024)} MB "
@@ -103,7 +103,7 @@ def transcribe(path, filename: str) -> tuple[dict, str]:
         with open(path, "rb") as fh:
             out = _client().audio.transcriptions.create(
                 file=(filename, fh.read()), model=config.TRANSCRIBE_MODEL,
-                response_format="verbose_json", temperature=0.0,
+                response_format="verbose_json", temperature=0.0, **({"language": language} if language else {}),
             )
     except AgentUnavailable:
         raise
@@ -112,7 +112,6 @@ def transcribe(path, filename: str) -> tuple[dict, str]:
     return {
         "text": out.text, "language": getattr(out, "language", None),
         "duration": getattr(out, "duration", None),
-        "segments": [{"start": s["start"], "end": s["end"], "text": s["text"]} if isinstance(s, dict)
-                     else {"start": s.start, "end": s.end, "text": s.text}
+        "segments": [{k: (s[k] if isinstance(s, dict) else getattr(s, k)) for k in ("start", "end", "text", "avg_logprob")}
                      for s in (getattr(out, "segments", None) or [])],
     }, config.TRANSCRIBE_MODEL

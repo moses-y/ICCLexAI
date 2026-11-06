@@ -20,13 +20,19 @@ Where ICCLexAI stands. Update this when an item changes; give the date and how i
       network dropped were re-run through the new endpoint and completed.
 - [x] **OTPLink fields and limits match the live form** (rendered 2026-11-06): see
       [otplink-field-map.md](otplink-field-map.md). The package warns when a case exceeds them.
+- [x] **AI provenance in every package** (2026-11-06): `ai_provenance.json` names, for each included
+      finding, whether a model, deterministic code or the submitter produced it, which model, and how a
+      person reviewed it; README_FIRST.txt carries an AI-use statement. Checked on the real case.
 - [x] **Project tree tidied**: unused apps, tools, shared UI and stale docs moved to `ARCHIVED_REDUNDANT/`.
 
 ## Open
 
 - [ ] **Rotate the Groq key** that was once hardcoded in an archived Streamlit app (noted in commit `ebd3abc`).
-- [ ] **Transcription of real speech.** The test clip has only a tone, so the transcript was "."; try a
-      real recording, ideally in Swahili as well as English.
+- [x] **Transcripts are measured, not guessed** (2026-11-06): `evals/transcription/` runs 180 FLEURS clips
+      (Swahili and English, clean and noisy, plus 30 with no speech) through the production code. Invented
+      transcripts of no-speech clips fell from 57% to 3% with no good transcript lost.
+- [ ] **Noisy Swahili is weak**: only 9 of 25 Swahili clips with crowd babble transcribe well. A model
+      limit, not invention; consider a Swahili-tuned model. No Sheng or real field recordings in the set yet.
 - [ ] **Free-tier speed.** At 1000 output tokens per minute a few files take several minutes. Groq's
       Dev tier would remove the wait; a cost decision.
 - [ ] **What OTPLink returns after Submit** (a reference number and its format) is unknown; it needs a
@@ -34,6 +40,9 @@ Where ICCLexAI stands. Update this when an item changes; give the date and how i
 - [ ] **Ask the OTP** whether metadata should be left intact and whether AI-assisted descriptions are
       acceptable.
 - [ ] **Chain-of-custody columns**: copy the Eurojust / ICC-OTP 2022 guidelines' annex into `custody_log.csv`.
+- [ ] **Prompt version in provenance.** Jobs record the model but not the prompt text used; add a prompt
+      hash per job so a finding can be traced to the exact instructions.
+- [ ] **Show provenance in the UI** (a model badge on each finding), not only in the package.
 - [ ] **Frontend button for re-run.** The endpoint exists; the case UI does not call it yet.
 - [ ] **Deployment workflows** in `.github/workflows/` (`deploy.yml`, `deploy-hf.yml`,
       `deploy-netlify.yml`, `deploy-railway.yml`) predate the case engine; `deploy.yml` still refers to

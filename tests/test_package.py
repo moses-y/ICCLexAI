@@ -21,9 +21,9 @@ def confirm_all(client, case, evidence_id=None):
     return ids
 
 
-def build(client, case, strip=False):
+def build(client, case, strip=False, copies=False):
     case_id, headers = case
-    r = client.post(f"/api/cases/{case_id}/package", headers=headers, json={"strip_metadata": strip})
+    r = client.post(f"/api/cases/{case_id}/package", headers=headers, json={"strip_metadata": strip, "include_originals": copies})
     return r
 
 
@@ -47,13 +47,13 @@ def prepared_case(client, case, run_jobs, data=None):
 
 def test_package_contains_the_originals_and_a_manifest_that_matches_them(client, case, run_jobs):
     res, data = prepared_case(client, case, run_jobs)
-    r = build(client, case)
+    r = build(client, case, copies=True)
     assert r.status_code == 200, r.text
 
     z = open_zip(client, case)
     names = set(z.namelist())
     assert {"README_FIRST.txt", "manifest.json", "manifest.csv", "summary.pdf", "evidence_map.geojson", "custody_log.csv",
-            "otplink_fields.md"} <= names
+            "otplink_fields.md", "ai_provenance.json"} <= names
     manifest = json.loads(z.read("manifest.json"))
     (row,) = manifest["evidence"]
     assert row["sha256_original"] == hashlib.sha256(data).hexdigest() == res["sha256"]
@@ -221,3 +221,61 @@ def test_the_custody_log_in_the_package_matches_the_database(client, case, run_j
     types = [r["event_type"] for r in rows]
     assert types[0] == "case_created" and "received" in types and "analysed" in types and "finding_changed" in types
     assert all(len(r["event_hash"]) == 64 for r in rows)
+
+
+def test_ai_provenance_names_who_produced_each_included_finding(client, case, run_jobs):
+    prepared_case(client, case, run_jobs)
+    build(client, case)
+    z = open_zip(client, case)
+    prov = json.loads(z.read("ai_provenance.json"))
+    assert "AI use:" in z.read("README_FIRST.txt").decode()
+    producers = {r["produced_by"]["type"] for r in prov["findings"]}
+    # Tests run without a model: EXIF facts come from a deterministic step, the typed fact from the submitter.
+    assert {"deterministic", "submitter"} <= producers and "model" not in producers
+    assert all(r["human_review"] and r["evidence"] in (None, "E1") for r in prov["findings"])
+    assert prov["models"] == [] and prov["narrative"]["drafted_by_model"] is None
+    typed = [r for r in prov["findings"] if r["kind"] == "stated_fact"]
+    assert typed and typed[0]["produced_by"]["step"] == "typed by the submitter"
+
+
+def test_extracted_findings_from_a_model_step_are_not_credited_to_the_model():
+    # The geolocation job ran the vision model and also looked GPS up in OpenStreetMap; the first real
+    # package credited the OpenStreetMap place name to the model.
+    import uuid
+    from types import SimpleNamespace as N
+
+    from icclex.package import _ai_provenance
+
+    job = N(id=uuid.uuid4(), agent="geolocation", model="vision-m")
+    ev = uuid.uuid4()
+    mk = lambda kind, source: N(id=uuid.uuid4(), evidence_id=ev, job_id=job.id, kind=kind, source=source, value={},  # noqa: E731
+                                status="confirmed", supersedes_id=None, confirmed_at=None)
+    fs = [mk("place", "extracted"), mk("place_candidate", "inferred")]
+    prov = _ai_provenance(N(external_processing_consent=True), {ev: "E1"}, {f.id: f for f in fs}, {job.id: job},
+                          N(narrative=N(model=None, version=1), dropped=[]))
+    by_kind = {r["kind"]: r["produced_by"] for r in prov["findings"]}
+    assert by_kind["place"] == {"type": "deterministic", "step": "geolocation", "model": None}
+    assert by_kind["place_candidate"]["model"] == "vision-m"
+
+
+def test_the_package_holds_no_copy_of_the_files_unless_asked(client, case, run_jobs):
+    res, data = prepared_case(client, case, run_jobs)
+    build(client, case)
+    z = open_zip(client, case)
+    assert not [n for n in z.namelist() if n.startswith("originals/")]
+    (row,) = json.loads(z.read("manifest.json"))["evidence"]
+    assert row["file_in_package"] is None and row["sha256_in_package"] == hashlib.sha256(data).hexdigest()
+    assert "your own copy of photo.jpg" in z.read("otplink_fields.md").decode()
+    assert "not in this package" in z.read("README_FIRST.txt").decode()
+
+
+def test_the_filing_assistant_reads_the_same_field_text_the_package_holds(client, case, run_jobs):
+    prepared_case(client, case, run_jobs)
+    build(client, case)
+    case_id, headers = case
+    o = client.get(f"/api/cases/{case_id}/package/otplink", headers=headers).json()
+    z = open_zip(client, case)
+    assert o == json.loads(z.read("otplink_fields.json"))
+    md = z.read("otplink_fields.md").decode()
+    assert [f["field"] for f in o["fields"]][2:4] == ["Incident Name", "Factual Summary"]
+    assert all(f["value"] in md for f in o["fields"] if f["value"]) and o["attachments"][0]["label"] == "E1"

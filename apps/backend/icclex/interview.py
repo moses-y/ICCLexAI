@@ -71,7 +71,7 @@ def turn(session: Session, case_id: uuid.UUID, user_text: str) -> tuple[str, lis
                               .order_by(ChatMessage.created_at)).scalars().all()
     messages = [{"role": m.role, "content": m.content} for m in history[-20:]] + [{"role": "user", "content": user_text}]
     reply, _ = llm.complete_text(ASK_SYSTEM, messages)
-    extracted, _ = llm.complete_json(EXTRACT_SYSTEM, user_text)
+    extracted, extractor = llm.complete_json(EXTRACT_SYSTEM, user_text)
 
     session.add(ChatMessage(case_id=case_id, role="user", content=user_text))
     new = []
@@ -79,7 +79,10 @@ def turn(session: Session, case_id: uuid.UUID, user_text: str) -> tuple[str, lis
         if str(item.get("text", "")).strip():
             f = Finding(case_id=case_id, kind="stated_fact", source="stated", status="proposed", value={
                 "text": str(item["text"]).strip(), "when": item.get("when"), "where": item.get("where"),
-                "who": item.get("who")})
+                "who": item.get("who"),
+                # Until 2026-11-06 the model was dropped here, so a fact a model pulled out of the chat looked
+                # the same in the package as one the person typed in; ai_provenance.json needs to tell them apart.
+                "extracted_by_model": extractor})
             session.add(f)
             new.append(f)
     session.flush()

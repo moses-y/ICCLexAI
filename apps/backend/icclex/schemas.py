@@ -43,7 +43,16 @@ class InterviewMessage(BaseModel):
 
 class PackageRequest(BaseModel):
     strip_metadata: bool = False
+    # The person uploaded these files from their own device, so the package normally holds only the documents
+    # and the manifest's hashes let them check their copies. A copy is for someone filing from elsewhere.
+    include_originals: bool = False
 
 
 class FiledRequest(BaseModel):
     otp_reference: str | None = Field(None, max_length=200)
+
+
+class RerunRequest(BaseModel):
+    # Steps to analyse again even though they finished, e.g. after the step was improved. Failed steps
+    # are always re-queued.
+    agents: list[Literal["metadata", "geolocation", "visual", "audio_video", "document", "integrity"]] = []

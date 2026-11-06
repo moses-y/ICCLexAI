@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from . import config
 from .agents import plan_for
-from .models import AnalysisJob, Evidence
+from .models import AnalysisJob, Evidence, Finding
 
 
 def enqueue_for_evidence(session: Session, evidence: Evidence) -> list[AnalysisJob]:
@@ -79,14 +79,26 @@ def evidence_status(session: Session, evidence_id: uuid.UUID) -> str:
     return "failed" if statuses == {"failed"} else "analysed"
 
 
-def rerun_failed(session: Session, evidence: Evidence) -> list[str]:
-    """Put an evidence item's failed jobs back in the queue with a fresh attempt count. Jobs that finished
-    are left alone: their findings are immutable, and re-running them would duplicate them."""
-    failed = list(session.execute(select(AnalysisJob).where(
-        AnalysisJob.evidence_id == evidence.id, AnalysisJob.status == "failed")).scalars())
-    for job in failed:
+def rerun(session: Session, evidence: Evidence, agents: list[str] = ()) -> tuple[list[str], list[str]]:
+    """Re-queue an evidence item's failed jobs, plus the named jobs even if they finished.
+
+    A finished step's earlier findings are marked superseded so the improved run replaces them: on
+    2026-11-06 the transcription step was fixed after it had put invented Spanish and Malay transcripts
+    into a real case, and nothing could replace them. Rows are kept (findings are never deleted), and
+    findings the submitter edited are left alone: those are their words, not the step's.
+    Returns (re-queued agents, superseded finding ids)."""
+    picked = list(session.execute(select(AnalysisJob).where(
+        AnalysisJob.evidence_id == evidence.id,
+        (AnalysisJob.status == "failed") | (AnalysisJob.agent.in_(list(agents)) & (AnalysisJob.status == "done")))).scalars())
+    superseded = []
+    for job in picked:
+        if job.status == "done":
+            for f in session.execute(select(Finding).where(
+                    Finding.job_id == job.id, Finding.status.in_(("proposed", "confirmed")))).scalars():
+                f.status = "superseded"
+                superseded.append(str(f.id))
         job.status, job.attempts, job.error, job.not_before, job.finished_at = "queued", 0, None, None, None
-    if failed:
+    if picked:
         evidence.status = "analysing"
     session.flush()
-    return [j.agent for j in failed]
+    return [j.agent for j in picked], superseded

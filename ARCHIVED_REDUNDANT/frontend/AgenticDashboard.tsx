@@ -145,9 +145,8 @@ const AgenticDashboard: React.FC<AgenticDashboardProps> = ({ onSubmissionComplet
         <div className="container mx-auto px-4 py-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <Scale className="h-8 w-8 text-kenya-red justice-scale" />
-              <div>
-                <h1 className="text-3xl font-bold text-kenya-black">ICCLexAI 🇰🇪</h1>
+              <Scale className="h-8 w-8 text-kenya-red justice-scale" />              <div>
+                <h1 className="text-3xl font-bold text-kenya-black">🇰🇪 ICCLexAI</h1>
                 <p className="text-sm text-kenya-green font-semibold">
                   Agentic AI-Powered ICC Evidence Analysis
                 </p>

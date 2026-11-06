@@ -1,206 +1,77 @@
-# ICC Legal AI Platform
+# ICCLexAI
 
-�️ **International Criminal Court AI-Powered Evidence Analysis Platform**
+Helps a person turn their own evidence and account into a **package they file themselves** on the ICC
+Prosecutor's OTPLink portal. Agents read each file (when and where it was captured, what it shows,
+what was said, whether the metadata is consistent) and say how they know. The person confirms, edits
+or rejects every finding; only confirmed findings go into the package.
 
-[![Deploy AI-ICC Evidence Tool](https://github.com/Moses-y/ai-icc-evidence-platform/workflows/Deploy%20AI-ICC%20Evidence%20Tool/badge.svg)](https://github.com/Moses-y/ai-icc-evidence-platform/actions)
-[![AI Model Monitoring](https://github.com/Moses-y/ai-icc-evidence-platform/workflows/AI%20Model%20Performance%20Monitoring/badge.svg)](https://github.com/Moses-y/ai-icc-evidence-platform/actions)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+It does **not** submit anything: OTPLink has no public API. It gives no legal advice and never states
+that a crime occurred or that the ICC has jurisdiction.
 
-## 🌍 Mission Statement
+Design, schema and diagrams: [docs/SYSTEM_DESIGN.md](docs/SYSTEM_DESIGN.md).
+What is still unverified about OTPLink: [docs/otplink-field-map.md](docs/otplink-field-map.md).
 
-The LLM could do more. DeepSeek is among the reasoning models. We're deploying multimodal LLMs to help extract information from ICC submissions. This is fantastic for background in building Multimodal Agentic LLMs in AI.
+## Run it
 
-ICC has submission limits. In this way, we'll help them have more context of injustice around the world. We can think of this as a development direction.
-
-## 🚀 Features
-
-### 🤖 AI-Powered Evidence Processing
-- **DeepSeek R1 Distill Llama 70B** primary reasoning model
-- **Llama 3.3 70B** fallback model for reliability
-- **Multimodal content extraction** from images, videos, audio, PDFs
-- **Automated metadata extraction** (GPS, timestamps, EXIF data)
-- **AI-generated evidence descriptions** for legal documentation
-
-### 📱 Modern User Experience
-- **TypeScript + React Frontend** with ShadCN UI components
-- **Professional legal interface** suitable for ICC submissions
-- **Real-time file upload** with drag-and-drop support
-- **Live AI analysis results** with progress indicators
-- **Responsive design** for desktop and mobile
-- **Dark/light mode support** for accessibility
-- **Real-time system status** monitoring
-
-### 📱 Legacy User Experience (Streamlit)
-- **Kenyan flag-themed interface** for cultural relevance
-- **Multi-step form wizard** with progress tracking
-- **Drag-and-drop file upload** with cloud integration placeholders
-- **Real-time AI assistance** for form completion
-- **Anonymous submission option** for whistleblower protection
-
-### 🔧 Technical Architecture
-- **FastAPI** async backend with parallel processing
-- **TypeScript + React** modern frontend with ShadCN UI
-- **Groq API** for lightning-fast AI inference
-- **Google Vision API** for advanced image analysis
-- **HuggingFace** for specialized AI models
-- **Roboflow** for computer vision tasks
-- **Redis** for caching and rate limit optimization
-- **Docker** containerization for production deployment
-- **Streamlit** legacy frontend option
-
-## 🛠️ Installation & Setup
-
-### Prerequisites
-- Python 3.9+
-- Groq API Key
-- Chrome/Brave browser for automated submissions
-
-### Quick Start
-
-#### Option 1: Full Stack (TypeScript + React Frontend) - RECOMMENDED
 ```bash
-# Windows
-launch_full_stack.bat
-
-# Linux/Mac
-chmod +x launch_frontend.sh
-./launch_frontend.sh
+docker compose up -d db                       # PostgreSQL 16 + PostGIS on 127.0.0.1:5433
+cd apps/backend
+pip install -r requirements.txt               # ffmpeg and ffprobe must be on PATH
+alembic upgrade head
+uvicorn icclex.main:app --port 8002           # API
+python -m icclex.worker                       # analysis worker (second terminal)
+cd ../frontend && npm install && npm run dev  # http://localhost:5173
 ```
 
-#### Option 2: Fast Launch (Streamlit Frontend)
-```bash
-# Linux/Mac
-./launch_fast_app.sh
+Or `python launch_icc_system_clean.py` for the API, worker and frontend together, or
+`docker compose up --build` for the database, migrations, API and worker.
 
-# Windows
-launch_fast_app.bat
+## Settings
+
+Environment variables, read from `.env` if present (`apps/backend/icclex/config.py`).
+
+| Variable | Purpose |
+|---|---|
+| `ICCLEX_DATABASE_URL` | default `postgresql+psycopg://icclex:icclex@localhost:5433/icclex` |
+| `ICCLEX_STORAGE_ROOT` | where originals and derived files live (default `var/cases`, git-ignored) |
+| `GROQ_API_KEY` | needed by every step that calls a model |
+| `ICCLEX_TEXT_MODEL` | text model for the interviewer, narrative and documents. **No default.** |
+| `ICCLEX_VISION_MODEL` | vision model for descriptions and place clues. **No default.** |
+| `ICCLEX_TRANSCRIBE_MODEL` | speech-to-text (default `whisper-large-v3-turbo`, carried over, not re-checked) |
+| `ICCLEX_CORS_ORIGINS` | allowed browser origins (default `http://localhost:5173`) |
+| `ICCLEX_NOMINATIM_USER_AGENT` | identifies you to OpenStreetMap's geocoder, per its usage policy |
+| `VITE_API_URL` | frontend's API address (default `http://localhost:8002`) |
+
+A model that is not set means the step says "not analysed". The text model has no default because the
+one the old code used (`llama-3.3-70b-versatile`) returned 404 "does not exist or you do not have access"
+on 2026-11-06: name a model your account can use.
+
+## Privacy
+
+- A case needs no account. You get a case key; the server keeps only its hash, so a lost key cannot be recovered.
+- Content leaves the server only if the submitter ticks the consent box for that case: images, audio, document text and chat go to the model provider, and GPS points go to OpenStreetMap to name the place. Without consent only the local steps run (file details, consistency checks, distance to the stated place).
+- No IP addresses or user agents are stored.
+- The map shows points on a blank background; street tiles (which tell openstreetmap.org what area you are viewing) load only if you tick the box.
+- The "remove metadata" export option is lossless and covers JPEG and PNG only. Stored originals are never changed.
+
+## Tests
+
+```bash
+docker compose up -d db
+python -m pytest tests          # needs PostgreSQL; it FAILS rather than skips if it is not reachable
 ```
 
-#### Option 3: Manual Launch
-```bash
-# Terminal 1 - Backend
-python fast_api_backend.py
+They run against a real PostgreSQL + PostGIS database created from the migrations, because the
+triggers, constraints and `SKIP LOCKED` queue the design depends on exist nowhere else. The tests
+blank the model settings so they cannot reach an outside service.
 
-# Terminal 2 - TypeScript Frontend (Modern UI)
-cd frontend
-npm install
-npm run dev
+## Layout
 
-# OR Terminal 2 - Streamlit Frontend (Legacy)  
-streamlit run fast_streamlit_app.py
-```
-
-### Environment Setup
-
-### Docker Deployment
-```bash
-docker build -t ai-icc-evidence-tool .
-docker run -p 8501:8501 -e GROQ_API_KEY=your_key ai-icc-evidence-tool
-```
-
-## 🔧 Configuration
-
-### Environment Variables
-```bash
-GROQ_API_KEY=your_groq_api_key
-STREAMLIT_SERVER_PORT=8501
-STREAMLIT_SERVER_ADDRESS=0.0.0.0
-```
-
-### AI Model Configuration
-- **Primary Model**: `deepseek-r1-distill-llama-70b`
-- **Fallback Model**: `llama-3.3-70b-versatile`
-- **Temperature**: 0.6 (balanced creativity/accuracy)
-- **Max Tokens**: 300 (optimized for legal descriptions)
-
-## 📊 AI Model Performance
-
-Our continuous monitoring ensures optimal AI performance:
-
-- **Daily automated testing** of both AI models
-- **Response quality validation** for legal accuracy
-- **Latency monitoring** for real-time user experience
-- **Fallback system testing** for 99.9% uptime
-
-## 🌐 Deployment
-
-### Streamlit Cloud
-Automatically deployed on every push to main branch.
-
-### Heroku
-Production-ready deployment with environment isolation.
-
-### Docker Hub
-Containerized deployment for any cloud provider.
-
-## 🛡️ Security & Privacy
-
-- **No personal data storage** on servers
-- **Anonymous submission options**
-- **Encrypted file transmission**
-- **Regular security scanning** with Bandit and Safety
-- **GDPR-compliant data handling**
-
-## 🤝 Contributing
-
-We welcome contributions to enhance the AI capabilities and expand support for international justice!
-
-### Development Workflow
-1. Fork the repository
-2. Create feature branch (`git checkout -b feature/amazing-ai-enhancement`)
-3. Commit changes (`git commit -m 'Add amazing AI feature'`)
-4. Push to branch (`git push origin feature/amazing-ai-enhancement`)
-5. Open Pull Request
-
-### AI Model Integration
-- **Add new models** via Groq API integration
-- **Implement multimodal capabilities** for video/audio analysis
-- **Enhance reasoning chains** for complex evidence relationships
-- **Improve multilingual support** for global accessibility
-
-## 📈 Roadmap
-
-### Phase 1: Foundation ✅
-- [x] Basic Streamlit application
-- [x] DeepSeek R1 integration
-- [x] Metadata extraction
-- [x] ICC form automation
-
-### Phase 2: AI Enhancement 🚧
-- [ ] Multimodal evidence analysis
-- [ ] Advanced reasoning chains
-- [ ] Evidence cross-referencing
-- [ ] Automated evidence validation
-
-### Phase 3: Global Scale 🔮
-- [ ] Multi-language support
-- [ ] Regional court integrations
-- [ ] Real-time incident monitoring
-- [ ] AI-powered evidence correlation
-
-## 📚 Documentation
-
-- [PRD - Product Requirements Document](./PRD.md)
-- [API Documentation](./docs/api.md)
-- [Deployment Guide](./docs/deployment.md)
-- [AI Model Documentation](./docs/ai-models.md)
-
-## 🏆 Recognition
-
-This project leverages cutting-edge AI reasoning models to democratize access to international justice mechanisms, making ICC submissions more accessible and comprehensive for victims of injustice worldwide.
-
-## 📞 Support
-
-- **Issues**: [GitHub Issues](https://github.com/Moses-y/ai-icc-evidence-platform/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/Moses-y/ai-icc-evidence-platform/discussions)
-- **Email**: moses.y@ai-icc-platform.org
-
-## 📄 License
-
-MIT License - see [LICENSE](LICENSE) file for details.
-
----
-
-**Built with ❤️ for international justice and powered by advanced AI reasoning models.**
-
-*"Technology in service of justice, AI in service of humanity."*
+| Path | What lives there |
+|---|---|
+| `apps/backend/icclex/` | API (`routes.py`), models, worker, agents, narrative, package builder |
+| `apps/backend/migrations/` | Alembic: `0001` schema, `0002` integrity triggers |
+| `apps/frontend/src/components/case/` | the React UI: files, review, map, account, package |
+| `tests/` | API, agent, database-integrity, narrative, package tests |
+| `libs/icc_automation/` | older agents, no longer used by the backend; kept until the new agents are accepted |
+| `ARCHIVED_REDUNDANT/` | the previous backends, launchers, chat UI and status reports, kept for reference |

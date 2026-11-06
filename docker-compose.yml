@@ -1,0 +1,63 @@
+# Database, migrations, API and worker. The frontend runs with `npm run dev` in apps/frontend
+# (http://localhost:5173), or build it and serve apps/frontend/dist.
+#
+#   docker compose up -d db          # just the database, for tests and local development
+#   docker compose up --build        # everything
+#
+# Set ICCLEX_DB_PASSWORD outside local development. Model settings are passed through from your
+# environment; an unset model means that step reports "not analysed" (see apps/backend/icclex/config.py).
+
+x-api: &api
+  build: { context: ., dockerfile: docker/Dockerfile.api }
+  environment: &api-env
+    ICCLEX_DATABASE_URL: postgresql+psycopg://icclex:${ICCLEX_DB_PASSWORD:-icclex}@db:5432/icclex
+    ICCLEX_STORAGE_ROOT: /data/cases
+    ICCLEX_CORS_ORIGINS: ${ICCLEX_CORS_ORIGINS:-http://localhost:5173}
+    GROQ_API_KEY: ${GROQ_API_KEY:-}
+    ICCLEX_TEXT_MODEL: ${ICCLEX_TEXT_MODEL:-}
+    ICCLEX_VISION_MODEL: ${ICCLEX_VISION_MODEL:-}
+    ICCLEX_TRANSCRIBE_MODEL: ${ICCLEX_TRANSCRIBE_MODEL:-}
+    ICCLEX_NOMINATIM_USER_AGENT: ${ICCLEX_NOMINATIM_USER_AGENT:-icclexai-evidence-tool}
+  volumes: [cases:/data/cases]
+
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: icclex
+      POSTGRES_PASSWORD: ${ICCLEX_DB_PASSWORD:-icclex}
+      POSTGRES_DB: icclex
+    ports: ["127.0.0.1:5433:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U icclex -d icclex"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    <<: *api
+    command: ["alembic", "upgrade", "head"]
+    depends_on: { db: { condition: service_healthy } }
+    restart: "no"
+
+  api:
+    <<: *api
+    ports: ["127.0.0.1:8002:8002"]
+    depends_on: { migrate: { condition: service_completed_successfully } }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/api/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  worker:
+    <<: *api
+    command: ["python", "-m", "icclex.worker"]
+    depends_on: { migrate: { condition: service_completed_successfully } }
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  cases:

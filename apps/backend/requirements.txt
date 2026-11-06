@@ -1,0 +1,20 @@
+# What the API and worker need (apps/backend/icclex). The repo-root requirements.txt also carries the
+# Streamlit-era packages; the image installs only this.
+fastapi>=0.104.0
+uvicorn>=0.24.0
+python-multipart>=0.0.6
+python-dotenv>=1.0.0
+pydantic>=2.5.0
+sqlalchemy>=2.0
+alembic>=1.13
+psycopg[binary]>=3.1
+geoalchemy2>=0.15
+shapely>=2.0
+pillow>=10.0.0
+exifread>=3.0.0
+opencv-python-headless>=4.8.0
+pymupdf>=1.23.0
+python-docx>=0.8.11
+geopy>=2.3.0
+groq>=0.4.0
+reportlab>=4.0

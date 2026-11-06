@@ -1,0 +1,17 @@
+FROM python:3.12-slim
+
+# ffmpeg/ffprobe: video and audio metadata, audio extraction for transcription.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY apps/backend/requirements.txt apps/backend/requirements.txt
+RUN pip install --no-cache-dir -r apps/backend/requirements.txt
+
+COPY apps/backend apps/backend
+RUN useradd --create-home app && mkdir -p /data/cases && chown app /data/cases
+USER app
+WORKDIR /app/apps/backend
+ENV ICCLEX_STORAGE_ROOT=/data/cases PYTHONUNBUFFERED=1
+EXPOSE 8002
+CMD ["uvicorn", "icclex.main:app", "--host", "0.0.0.0", "--port", "8002"]

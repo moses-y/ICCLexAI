@@ -114,6 +114,32 @@ type ToastProps = React.ComponentPropsWithoutRef<typeof Toast>
 
 type ToastActionElement = React.ReactElement<typeof ToastAction>
 
+// Simple toast hook implementation
+interface ToastHookProps {
+  title?: string
+  description?: string
+  variant?: "default" | "destructive"
+}
+
+const useToast = () => {
+  const toast = (props: ToastHookProps) => {
+    // Simple console log for now - in production would use a proper toast system
+    console.log(`Toast: ${props.title} - ${props.description}`)
+    
+    // Could also show browser notification
+    if (props.title) {
+      // Simple alert fallback
+      if (props.variant === "destructive") {
+        alert(`Error: ${props.title}\n${props.description || ''}`)
+      } else {
+        alert(`${props.title}\n${props.description || ''}`)
+      }
+    }
+  }
+  
+  return { toast }
+}
+
 export {
   type ToastProps,
   type ToastActionElement,
@@ -124,4 +150,5 @@ export {
   ToastDescription,
   ToastClose,
   ToastAction,
+  useToast,
 }

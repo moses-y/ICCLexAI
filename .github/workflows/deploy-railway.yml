@@ -1,0 +1,86 @@
+# Railway Backend Deployment
+name: Deploy Backend to Railway
+
+on:
+  push:
+    branches: [ main ]
+    paths: 
+      - 'apps/backend/**'
+      - 'requirements.txt'
+      - '.github/workflows/deploy-railway.yml'
+
+jobs:
+  deploy-railway:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Railway CLI
+      run: |
+        npm install -g @railway/cli
+        
+    - name: Deploy to Railway
+      env:
+        RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      run: |
+        # Create railway project files
+        cat > railway.json << 'EOF'
+        {
+          "$schema": "https://railway.app/railway.schema.json",
+          "build": {
+            "builder": "DOCKERFILE",
+            "dockerfilePath": "Dockerfile.railway"
+          },
+          "deploy": {
+            "numReplicas": 1,
+            "sleepApplication": false,
+            "restartPolicyType": "ON_FAILURE"
+          }
+        }
+        EOF
+        
+        cat > Dockerfile.railway << 'EOF'
+        FROM python:3.11-slim
+        
+        WORKDIR /app
+        
+        # Install system dependencies
+        RUN apt-get update && apt-get install -y \
+            curl \
+            ffmpeg \
+            libsm6 \
+            libxext6 \
+            libfontconfig1 \
+            libxrender1 \
+            libgl1-mesa-glx \
+            && rm -rf /var/lib/apt/lists/*
+        
+        # Copy requirements and install
+        COPY requirements.txt .
+        RUN pip install --no-cache-dir -r requirements.txt
+        
+        # Copy backend application
+        COPY apps/backend/ .
+        
+        # Create uploads directory
+        RUN mkdir -p uploads
+        
+        # Expose port
+        EXPOSE $PORT
+        
+        # Start the FastAPI server
+        CMD ["sh", "-c", "uvicorn fast_api_backend:app --host 0.0.0.0 --port $PORT"]
+        EOF
+        
+        # Deploy using Railway CLI
+        railway login --token $RAILWAY_TOKEN
+        railway up --detach
+        
+    - name: Get deployment URL
+      env:
+        RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      run: |
+        URL=$(railway status --json | jq -r '.deployments[0].url')
+        echo "Backend deployed to: $URL" >> $GITHUB_STEP_SUMMARY

@@ -177,7 +177,34 @@ def _docx(ctx: AgentContext) -> AgentResult:
     return AgentResult(findings=out)
 
 
+# Dates that apps write into file names: WhatsApp ("WhatsApp Image 2025-06-17 at 22.46.39"), Android cameras
+# ("IMG_20250617_224639", "VID_...", "PXL_..."), screenshots ("Screenshot_20250617-224639").
+_NAME_DATES = (
+    re.compile(r"(\d{4})-(\d{2})-(\d{2}) at (\d{2})\.(\d{2})\.(\d{2})"),
+    re.compile(r"(?:IMG|VID|PXL|Screenshot)[_-](\d{4})(\d{2})(\d{2})[_-](\d{2})(\d{2})(\d{2})"),
+)
+
+
+def _name_date(name: str) -> list[FindingDraft]:
+    for pattern in _NAME_DATES:
+        m = pattern.search(name)
+        if m:
+            y, mo, d, h, mi, s = (int(x) for x in m.groups())
+            try:
+                iso = datetime(y, mo, d, h, mi, s).isoformat()
+            except ValueError:
+                return []
+            return [FindingDraft("name_date", {"iso": iso, "tz_known": False, "from_name": m.group(0)}, "extracted")]
+    return []
+
+
 def run(ctx: AgentContext) -> AgentResult:
+    result = _by_type(ctx)
+    result.findings += _name_date(ctx.original_name)
+    return result
+
+
+def _by_type(ctx: AgentContext) -> AgentResult:
     if ctx.mime.startswith("image/"):
         return _image(ctx)
     if ctx.mime.startswith(("video/", "audio/")):

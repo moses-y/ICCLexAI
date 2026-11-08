@@ -32,6 +32,8 @@ class BulkAction(BaseModel):
 
 class StatedFact(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
+    # Set when the statement is about one file, such as how the submitter obtained it.
+    evidence_id: str | None = None
     when: str | None = None
     where: str | None = None
     who: str | None = None
@@ -42,10 +44,8 @@ class InterviewMessage(BaseModel):
 
 
 class PackageRequest(BaseModel):
-    strip_metadata: bool = False
-    # The person uploaded these files from their own device, so the package normally holds only the documents
-    # and the manifest's hashes let them check their copies. A copy is for someone filing from elsewhere.
-    include_originals: bool = False
+    # Files go to OTPLink as uploaded, hidden details included; the person has to agree to that.
+    consent_files_as_they_are: bool = False
 
 
 class FiledRequest(BaseModel):

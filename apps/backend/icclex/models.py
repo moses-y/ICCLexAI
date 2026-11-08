@@ -30,7 +30,7 @@ JOB_STATUSES = ("queued", "running", "done", "failed")
 AGENTS = ("metadata", "geolocation", "visual", "audio_video", "document", "integrity")
 FINDING_KINDS = (
     "capture_time", "gps", "device", "file_properties", "place", "place_candidate", "description", "visible_text", "transcript",
-    "entity", "document_summary", "integrity_flag", "geo_conflict", "stated_fact",
+    "entity", "document_summary", "integrity_flag", "geo_conflict", "stated_fact", "name_date",
 )
 FINDING_SOURCES = ("extracted", "inferred", "stated")
 # 'superseded' is not in the plan's list: an edited finding needs its predecessor marked so that a

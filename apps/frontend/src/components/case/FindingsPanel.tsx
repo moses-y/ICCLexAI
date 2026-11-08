@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 interface Props { session: Session; detail: CaseDetail; findings: Finding[]; refresh: () => Promise<void> }
 
 const STATUS_CLS: Record<string, string> = {
-  proposed: 'bg-gray-100 text-gray-800', confirmed: 'bg-green-100 text-green-900', edited: 'bg-green-100 text-green-900', rejected: 'bg-red-100 text-red-900',
+  proposed: 'bg-brand-gold/15 text-amber-900', confirmed: 'bg-brand-teal/10 text-brand-teal', edited: 'bg-brand-teal/10 text-brand-teal', rejected: 'bg-red-100 text-red-900',
 }
 
 function FindingRow({ session, f, refresh }: { session: Session; f: Finding; refresh: () => Promise<void> }) {
@@ -25,8 +25,8 @@ function FindingRow({ session, f, refresh }: { session: Session; f: Finding; ref
     <li className="space-y-1 border-t py-2 first:border-t-0">
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <span className="font-medium">{KIND_LABEL[f.kind] ?? f.kind}</span>
-        <span className={`rounded px-1.5 py-0.5 ${src.cls}`} title={src.hint}>{src.text}</span>
-        <span className={`rounded px-1.5 py-0.5 ${STATUS_CLS[f.status]}`}>{f.status}</span>
+        <span className={`rounded-full px-2 py-0.5 ${src.cls}`} title={src.hint}>{src.text}</span>
+        <span className={`rounded-full px-2 py-0.5 ${STATUS_CLS[f.status]}`}>{f.status}</span>
       </div>
       {editing ? (
         <div className="space-y-1">
@@ -41,7 +41,7 @@ function FindingRow({ session, f, refresh }: { session: Session; f: Finding; ref
       ) : (
         <p className="whitespace-pre-wrap break-words text-sm">{describe(f)}</p>
       )}
-      {f.kind === 'integrity_flag' && <p className="text-xs text-gray-600">A flag is not a finding of tampering; it is something worth checking.</p>}
+      {f.kind === 'integrity_flag' && <p className="text-xs text-muted-foreground">A flag is not a finding of tampering; it is something worth checking.</p>}
       {!editing && (
         <div className="flex flex-wrap gap-1">
           {f.status !== 'confirmed' && f.status !== 'edited' && <Button size="sm" onClick={() => void act('confirm')}>Confirm</Button>}
@@ -81,7 +81,7 @@ export default function FindingsPanel({ session, detail, findings, refresh }: Pr
           <Card key={ev.id}>
             <CardHeader><CardTitle className="text-sm">{ev.original_name}</CardTitle></CardHeader>
             <CardContent>
-              {mine.length === 0 ? <p className="text-sm text-gray-600">Nothing was found for this file.</p>
+              {mine.length === 0 ? <p className="text-sm text-muted-foreground">Nothing was found for this file.</p>
                 : <ul>{mine.map(f => <FindingRow key={f.id} session={session} f={f} refresh={refresh} />)}</ul>}
             </CardContent>
           </Card>

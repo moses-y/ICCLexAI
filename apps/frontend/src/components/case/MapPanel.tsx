@@ -5,6 +5,7 @@ import { api, ApiError, type CaseDetail, type Finding, type Session } from '@/li
 import { describe } from '@/lib/findings'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { MapPin } from 'lucide-react'
 
 interface Props { session: Session; detail: CaseDetail; findings: Finding[]; refresh: () => Promise<void> }
 const TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
@@ -62,14 +63,14 @@ export default function MapPanel({ session, detail, findings, refresh }: Props) 
 
   return (
     <Card>
-      <CardHeader><CardTitle className="text-base">Where</CardTitle></CardHeader>
+      <CardHeader><CardTitle className="text-base"><MapPin />Where</CardTitle></CardHeader>
       <CardContent className="space-y-2 text-sm">
         <p>Blue: GPS recorded in your files. Green: where you say it happened. Click the map to pin a place; files with no GPS can be tied to the incident this way.</p>
         <div ref={el} className="h-72 w-full rounded border bg-gray-50" role="application" aria-label="Map of file locations" />
         <label className="flex items-center gap-2"><input type="checkbox" checked={useTiles} onChange={e => setUseTiles(e.target.checked)} /> Show street map (loads tiles from openstreetmap.org, which can see the area you view)</label>
         {pin && <div className="flex flex-wrap items-center gap-2"><span>Pin: {pin.lat.toFixed(5)}, {pin.lon.toFixed(5)}</span><Button size="sm" onClick={() => void savePin()}>Use as where it happened</Button><Button size="sm" variant="outline" onClick={() => setPin(null)}>Clear</Button></div>}
         {error && <p role="alert" className="text-red-700">{error}</p>}
-        {points.length === 0 && !detail.incident_location && <p className="text-gray-600">No file has GPS yet.</p>}
+        {points.length === 0 && !detail.incident_location && <p className="text-muted-foreground">No file has GPS yet.</p>}
       </CardContent>
     </Card>
   )

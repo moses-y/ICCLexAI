@@ -345,3 +345,8 @@ apps/ARCHIVED_REDUNDANT/
 *.env.backup
 *.secrets
 secrets/
+
+# lib/ above is for Python build output; it also caught the frontend's source (api.ts, session.ts),
+# which was never committed. *.png caught the README screenshots.
+!apps/frontend/src/lib/
+!docs/screenshots/*.png

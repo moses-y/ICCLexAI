@@ -6,11 +6,10 @@ import io
 import json
 import zipfile
 
-import exifread
 
 from icclex import narrative
 
-from .fixtures import findings, jpeg, png, upload
+from .fixtures import findings, jpeg, upload
 
 
 def confirm_all(client, case, evidence_id=None):
@@ -21,9 +20,9 @@ def confirm_all(client, case, evidence_id=None):
     return ids
 
 
-def build(client, case, strip=False, copies=False):
+def build(client, case, consent=True):
     case_id, headers = case
-    r = client.post(f"/api/cases/{case_id}/package", headers=headers, json={"strip_metadata": strip, "include_originals": copies})
+    r = client.post(f"/api/cases/{case_id}/package", headers=headers, json={"consent_files_as_they_are": consent})
     return r
 
 
@@ -42,12 +41,14 @@ def prepared_case(client, case, run_jobs, data=None):
     confirm_all(client, case)
     case_id, headers = case
     client.post(f"/api/cases/{case_id}/facts", headers=headers, json={"text": "I took this photo at the market.", "when": "2025-06-15"})
+    client.patch(f"/api/cases/{case_id}", headers=headers,
+                 json={"incident_from": "2025-06-15", "incident_to": "2025-06-15", "incident_location_text": "Nairobi"})
     return res, data
 
 
-def test_package_contains_the_originals_and_a_manifest_that_matches_them(client, case, run_jobs):
+def test_package_holds_a_manifest_that_matches_the_files_but_no_copy_of_them(client, case, run_jobs):
     res, data = prepared_case(client, case, run_jobs)
-    r = build(client, case, copies=True)
+    r = build(client, case)
     assert r.status_code == 200, r.text
 
     z = open_zip(client, case)
@@ -56,13 +57,15 @@ def test_package_contains_the_originals_and_a_manifest_that_matches_them(client,
             "otplink_fields.md", "ai_provenance.json"} <= names
     manifest = json.loads(z.read("manifest.json"))
     (row,) = manifest["evidence"]
-    assert row["sha256_original"] == hashlib.sha256(data).hexdigest() == res["sha256"]
-    assert z.read(row["file_in_package"]) == data and row["metadata_removed"] is False
+    assert row["sha256"] == hashlib.sha256(data).hexdigest() == res["sha256"]
+    # The package is the person's record; OTPLink gets the stored originals, so no copy goes in the zip.
+    assert not [n for n in names if n.startswith("originals/")]
+    assert "holds no copy of your files" in z.read("README_FIRST.txt").decode()
     assert hashlib.sha256(z.read("manifest.json")).hexdigest() == r.json()["manifest_sha256"]
     assert manifest["custody_chain_valid"] is True
     assert z.read("summary.pdf")[:5] == b"%PDF-"
     rows = list(csv.DictReader(io.StringIO(z.read("manifest.csv").decode())))
-    assert rows[0]["sha256_original"] == res["sha256"]
+    assert rows[0]["sha256"] == res["sha256"]
 
 
 def test_geojson_and_fields_use_only_confirmed_data_and_say_it_is_not_filed(client, case, run_jobs):
@@ -88,7 +91,8 @@ def test_every_sentence_is_cited_and_nothing_states_a_legal_conclusion(client, c
         claims = s.query(NarrativeClaim).filter_by(narrative_id=n.id).all()
         from icclex.models import Finding
 
-        citable = s.query(Finding).filter(Finding.status.in_(("confirmed", "edited"))).count()
+        citable = s.query(Finding).filter(Finding.status.in_(("confirmed", "edited")),
+                                          Finding.kind.notin_(narrative.NARRATIVE_EXCLUDED_KINDS)).count()
         assert claims and all(c.finding_id for c in claims)
         assert len({c.sentence_index for c in claims}) == citable  # plain record: one cited sentence per confirmed finding
         assert all(c.text in n.body for c in claims)
@@ -103,6 +107,7 @@ def test_unconfirmed_findings_never_reach_the_package(client, case, run_jobs):
     fs = findings(client, case, res["evidence_id"])
     only = next(f for f in fs if f["kind"] == "capture_time")
     client.patch(f"/api/cases/{case_id}/findings/{only['id']}", headers=headers, json={"action": "confirm"})
+    client.patch(f"/api/cases/{case_id}", headers=headers, json={"incident_from": "2025-06-15", "incident_location_text": "Nairobi"})
     build(client, case)
     z = open_zip(client, case)
     assert json.loads(z.read("evidence_map.geojson"))["features"] == []  # the GPS finding was never confirmed
@@ -127,9 +132,9 @@ def test_editing_a_finding_after_the_package_makes_it_stale(client, case, run_jo
     case_id, headers = case
     assert client.get(f"/api/cases/{case_id}", headers=headers).json()["status"] == "package_ready"
 
-    dev = next(f for f in findings(client, case) if f["kind"] == "device")
+    dev = next(f for f in findings(client, case) if f["kind"] == "capture_time")
     edited = client.patch(f"/api/cases/{case_id}/findings/{dev['id']}", headers=headers,
-                          json={"action": "edit", "value": {**dev["value"], "make": "Corrected Make"}})
+                          json={"action": "edit", "value": {**dev["value"], "iso": "2025-06-16T09:00:00+03:00"}})
     assert edited.status_code == 200 and edited.json()["status"] == "edited" and edited.json()["source"] == "stated"
     assert edited.json()["supersedes_id"] == dev["id"]
 
@@ -144,8 +149,8 @@ def test_editing_a_finding_after_the_package_makes_it_stale(client, case, run_jo
 
     with session_scope() as s:
         current = s.query(Narrative).filter_by(status="approved").one()
-        assert current.version == 2 and "The submitter wrote: recording device details: make Corrected Make" in current.body
-        assert "TestCam" not in current.body
+        assert current.version == 2 and "The submitter wrote: capture time 2025-06-16T09:00:00+03:00" in current.body
+        assert "2025-06-15T10:30" not in current.body
 
 
 def test_an_edit_must_keep_the_findings_fields(client, case, run_jobs):
@@ -154,48 +159,6 @@ def test_an_edit_must_keep_the_findings_fields(client, case, run_jobs):
     dev = next(f for f in findings(client, case) if f["kind"] == "device")
     r = client.patch(f"/api/cases/{case_id}/findings/{dev['id']}", headers=headers, json={"action": "edit", "value": {"make": "x"}})
     assert r.status_code == 422
-
-
-def test_metadata_stripping_is_lossless_recorded_and_leaves_the_original_alone(client, case, run_jobs):
-    res, data = prepared_case(client, case, run_jobs)
-    r = build(client, case, strip=True)
-    assert r.status_code == 200
-    z = open_zip(client, case)
-    (row,) = json.loads(z.read("manifest.json"))["evidence"]
-    stripped = z.read(row["file_in_package"])
-
-    assert row["metadata_removed"] is True and row["sha256_original"] == hashlib.sha256(data).hexdigest()
-    assert row["sha256_in_package"] == hashlib.sha256(stripped).hexdigest() != row["sha256_original"]
-    tags = exifread.process_file(io.BytesIO(stripped), details=False)
-    assert not [t for t in tags if t.startswith(("GPS", "EXIF")) or t.startswith("Image Make")]
-    from PIL import Image
-
-    assert list(Image.open(io.BytesIO(stripped)).getdata()) == list(Image.open(io.BytesIO(data)).getdata())  # same pixels
-    # the stored original is untouched, and the export is in the custody log
-    assert hashlib.sha256(next((__import__("icclex.config", fromlist=["x"]).STORAGE_ROOT / case[0] / "originals").rglob("photo.jpg")).read_bytes()).hexdigest() == res["sha256"]
-    case_id, headers = case
-    events = client.get(f"/api/cases/{case_id}/custody", headers=headers).json()["events"]
-    assert any(e["event_type"] == "exported" and e["detail"]["metadata_removed"] for e in events)
-
-
-def test_stripping_a_type_it_cannot_strip_losslessly_is_reported_not_faked(client, case, run_jobs):
-    upload(client, case, "p.png", png(), "image/png")
-    upload(client, case, "doc.txt", b"a plain text note", "text/plain")
-    run_jobs()
-    confirm_all(client, case)
-    r = build(client, case, strip=True).json()
-    z = open_zip(client, case)
-    rows = {x["original_name"]: x for x in json.loads(z.read("manifest.json"))["evidence"]}
-    assert rows["p.png"]["metadata_removed"] is True and rows["doc.txt"]["metadata_removed"] is False
-    assert not any("metadata removal" in d["text"] for d in r["removed_from_draft"])
-
-
-def test_asking_to_strip_when_nothing_can_be_stripped_says_so(client, case, run_jobs):
-    upload(client, case, "doc.txt", b"a plain text note", "text/plain")
-    run_jobs()
-    confirm_all(client, case)
-    r = build(client, case, strip=True).json()
-    assert any("metadata removal" in d["text"] and "JPEG or PNG" in d["reason"] for d in r["removed_from_draft"])
 
 
 def test_marking_a_case_filed_needs_a_current_package_and_is_the_submitters_word(client, case, run_jobs):
@@ -258,17 +221,6 @@ def test_extracted_findings_from_a_model_step_are_not_credited_to_the_model():
     assert by_kind["place_candidate"]["model"] == "vision-m"
 
 
-def test_the_package_holds_no_copy_of_the_files_unless_asked(client, case, run_jobs):
-    res, data = prepared_case(client, case, run_jobs)
-    build(client, case)
-    z = open_zip(client, case)
-    assert not [n for n in z.namelist() if n.startswith("originals/")]
-    (row,) = json.loads(z.read("manifest.json"))["evidence"]
-    assert row["file_in_package"] is None and row["sha256_in_package"] == hashlib.sha256(data).hexdigest()
-    assert "your own copy of photo.jpg" in z.read("otplink_fields.md").decode()
-    assert "not in this package" in z.read("README_FIRST.txt").decode()
-
-
 def test_the_filing_assistant_reads_the_same_field_text_the_package_holds(client, case, run_jobs):
     prepared_case(client, case, run_jobs)
     build(client, case)
@@ -279,3 +231,35 @@ def test_the_filing_assistant_reads_the_same_field_text_the_package_holds(client
     md = z.read("otplink_fields.md").decode()
     assert [f["field"] for f in o["fields"]][2:4] == ["Incident Name", "Factual Summary"]
     assert all(f["value"] in md for f in o["fields"] if f["value"]) and o["attachments"][0]["label"] == "E1"
+
+
+def test_a_package_needs_consent_to_send_the_files_as_they_are(client, case, run_jobs):
+    prepared_case(client, case, run_jobs)
+    r = build(client, case, consent=False)
+    assert r.status_code == 409 and "as they are" in r.json()["detail"]
+    assert build(client, case).status_code == 200
+    case_id, headers = case
+    events = client.get(f"/api/cases/{case_id}/custody", headers=headers).json()["events"]
+    assert any(e["event_type"] == "package_built" and e["detail"]["files_sent_as_they_are"] for e in events)
+
+
+def test_the_summary_leaves_out_file_details_and_includes_where_a_file_came_from(client, case, run_jobs):
+    res, _ = prepared_case(client, case, run_jobs)
+    case_id, headers = case
+    r = client.post(f"/api/cases/{case_id}/facts", headers=headers,
+                    json={"text": "I received this photo from a neighbour on WhatsApp.", "evidence_id": res["evidence_id"]})
+    assert r.status_code == 201 and r.json()["evidence_id"] == res["evidence_id"]
+    assert client.post(f"/api/cases/{case_id}/facts", headers=headers,
+                       json={"text": "x", "evidence_id": "not-a-uuid"}).status_code == 404
+    build(client, case)
+    summary = client.get(f"/api/cases/{case_id}/package/otplink", headers=headers).json()["fields"][3]["value"]
+    assert "from a neighbour" in summary
+    assert "64" not in summary and "JPEG" not in summary  # the 64x48 JPEG's file properties stay out
+
+
+def test_a_package_needs_the_date_and_place_otplink_requires(client, case, run_jobs):
+    prepared_case(client, case, run_jobs)
+    case_id, headers = case
+    client.patch(f"/api/cases/{case_id}", headers=headers, json={"incident_location_text": None})
+    r = build(client, case)
+    assert r.status_code == 409 and "date and place" in r.json()["detail"]

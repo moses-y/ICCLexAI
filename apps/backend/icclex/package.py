@@ -1,7 +1,6 @@
-"""Builds the submission package the user files on OTPLink themselves. Nothing here contacts the ICC.
+"""Builds the submission package: the person's record of what goes to OTPLink. Nothing here contacts the ICC.
 
-Contents: originals (or metadata-stripped copies when the submitter chose that), manifest with SHA-256
-for every file, summary PDF, GeoJSON of confirmed locations, the custody log, and the text to paste
+Contents: manifest with SHA-256 for every file (the files themselves are not copied in), summary PDF, GeoJSON of confirmed locations, the custody log, and the text to paste
 into each OTPLink field. Only confirmed or edited findings go in; unreviewed and rejected ones are
 counted and left out, and the PDF says how many."""
 
@@ -22,7 +21,6 @@ from . import custody
 from .models import AnalysisJob, Artefact, Case, CustodyEvent, Evidence, Finding, NarrativeClaim, SubmissionPackage
 from .narrative import NarrativeResult, attribute, build_narrative, citable_findings
 from .storage import LocalStorage
-from .strip import strip_metadata
 from .timeline import rebuild_timeline
 
 DISCLAIMER = (
@@ -49,7 +47,7 @@ def _otplink_limit_warnings(name: str, summary: str, rows: list[dict]) -> list[s
         out.append(f"Incident name is {len(name)} characters; OTPLink accepts {OTPLINK_INCIDENT_NAME_MAX_CHARS}.")
     if len(summary.encode()) > OTPLINK_SUMMARY_MAX_BYTES:
         out.append("Factual summary is larger than OTPLink's 1.8 MB limit.")
-    big = [r["file_in_package"] or r["original_name"] for r in rows if r["size_bytes"] > OTPLINK_MAX_FILE_BYTES]
+    big = [r["original_name"] for r in rows if r["size_bytes"] > OTPLINK_MAX_FILE_BYTES]
     if big:
         out.append("Over OTPLink's 2.0 GB per-file limit: " + ", ".join(big) + ".")
     if sum(r["size_bytes"] for r in rows) > OTPLINK_MAX_TOTAL_BYTES:
@@ -134,8 +132,8 @@ def _otplink_fields(case: Case, name: str, when: str, loc, summary: str, rows: l
             {"field": "Location of Incident", "value": place,
              "note": f"Then drag the map pin to {loc[0]:.5f}, {loc[1]:.5f}." if loc else "Then place the map pin."},
         ],
-        "attachments": [{"label": r["label"], "original_name": r["original_name"], "file_in_package": r["file_in_package"],
-                         "sha256": r["sha256_in_package"], "size_bytes": r["size_bytes"]} for r in rows],
+        "attachments": [{"label": r["label"], "original_name": r["original_name"], "sha256": r["sha256"],
+                         "size_bytes": r["size_bytes"]} for r in rows],
         "notes": ["OTPLink asks that you do not use a VPN or proxy while submitting."],
     }
 
@@ -148,8 +146,8 @@ def _otplink_markdown(o: dict) -> str:
         out += [f"## {f['field']}{limit}", *([f["value"]] if f["value"] is not None else []),
                 *([f["note"]] if f.get("note") else []), ""]
     out += ["## Add Attachment(s), in this order",
-            *[f"{a['label']}. {a['file_in_package'] or 'your own copy of ' + a['original_name']}  (SHA-256 {a['sha256']})"
-              for a in o["attachments"]], "", *o["notes"], "",
+            *[f"{a['label']}. {a['original_name']}  (SHA-256 {a['sha256']})" for a in o["attachments"]],
+            "Then summary.pdf from this package", "", *o["notes"], "",
             "## Afterwards", "Record any reference OTPLink gives you in ICCLexAI, then mark the case as filed.", ""]
     return "\n".join(out)
 
@@ -245,16 +243,23 @@ def _custody_csv(events: list[CustodyEvent]) -> bytes:
     return out.getvalue().encode()
 
 
-def build_package(session: Session, case: Case, storage: LocalStorage, *, strip_metadata_on_export: bool,
-                  use_model: bool, include_originals: bool = False) -> tuple[SubmissionPackage, NarrativeResult]:
+def build_package(session: Session, case: Case, storage: LocalStorage, *, use_model: bool,
+                  consent_files_as_they_are: bool) -> tuple[SubmissionPackage, NarrativeResult]:
     evidence = list(session.execute(select(Evidence).where(Evidence.case_id == case.id)
                                     .order_by(Evidence.received_at, Evidence.original_name)).scalars())
     if not evidence:
         raise PackageError("add at least one file before building a package")
+    # The files go to OTPLink exactly as uploaded, hidden details (time, place, device) included: removing them
+    # weakens them as evidence, and the person decided on 2026-11-06 that consent replaces the stripping option.
+    if not consent_files_as_they_are:
+        raise PackageError("agree to send your files as they are, with their hidden details, before preparing")
     if any(e.status in ("received", "analysing") for e in evidence):
         raise PackageError("some files are still being analysed")
     if not citable_findings(session, case.id):
         raise PackageError("confirm at least one finding first: the package only contains confirmed findings")
+    # OTPLink requires both; the first real package reached it with "not stated" in each (2026-11-06).
+    if case.incident_period is None or not case.incident_location_text:
+        raise PackageError("give the date and place of the incident first: OTPLink requires both")
 
     timeline = rebuild_timeline(session, case.id)
     result = build_narrative(session, case.id, use_model=use_model)
@@ -283,40 +288,17 @@ def build_package(session: Session, case: Case, storage: LocalStorage, *, strip_
         zpath = Path(tmp) / "package.zip"
         with zipfile.ZipFile(zpath, "w", zipfile.ZIP_STORED, allowZip64=True) as z:
             for e in evidence:
-                src = storage.path(e.storage_uri)
-                member = f"originals/{labels[e.id]}_{Path(e.storage_uri).name}"
-                stripped = False
-                if strip_metadata_on_export:
-                    data = strip_metadata(src.read_bytes(), e.mime_sniffed)
-                    if data is not None:
-                        z.writestr(member, data)
-                        stripped, packaged_sha = True, _sha(data)
-                        stored = storage.save_bytes(case.id, f"derived/{e.id}", f"stripped_{Path(src).name}", data)
-                        session.add(Artefact(case_id=case.id, evidence_id=e.id, kind="stripped_copy",
-                                             storage_uri=stored.storage_uri, sha256=stored.sha256))
-                        custody.record(session, case.id, "exported", actor_type="system", actor_ref="package",
-                                       evidence_id=e.id, detail={"metadata_removed": True, "sha256_original": e.sha256,
-                                                                 "sha256_exported": packaged_sha})
-                if not stripped:
-                    packaged_sha = e.sha256
-                    if include_originals:
-                        z.write(src, member)
-                    else:
-                        member = None  # the person files the copy on their own device, checked by sha256_original
+                # The package is the person's record and holds no copy of the files: OTPLink gets the stored
+                # originals, and a person with their own copy checks it against sha256.
                 manifest_rows.append({
                     "label": labels[e.id], "evidence_id": str(e.id), "original_name": e.original_name,
-                    "mime": e.mime_sniffed, "size_bytes": e.size_bytes, "sha256_original": e.sha256,
-                    "file_in_package": member, "metadata_removed": stripped, "sha256_in_package": packaged_sha,
+                    "mime": e.mime_sniffed, "size_bytes": e.size_bytes, "sha256": e.sha256,
                     "confirmed_findings": len(per_evidence.get(e.id, []))})
                 for f in per_evidence.get(e.id, []):
                     if f.kind == "gps":
                         geojson["features"].append({"type": "Feature", "geometry": {
                             "type": "Point", "coordinates": [f.value["lon"], f.value["lat"]]},
                             "properties": {"evidence": labels[e.id], "file": e.original_name, "source": f.source}})
-            if strip_metadata_on_export and not any(r["metadata_removed"] for r in manifest_rows):
-                result.dropped.append({"text": "(metadata removal)", "reason": "no file in this case is a JPEG or PNG, "
-                                       "the only types this tool strips losslessly"})
-
             events = list(session.execute(select(CustodyEvent).where(CustodyEvent.case_id == case.id)).scalars())
             manifest = {"case_id": str(case.id), "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
                         "narrative_version": result.narrative.version, "custody_chain_valid": ok_chain,
@@ -332,11 +314,9 @@ def build_package(session: Session, case: Case, storage: LocalStorage, *, strip_
             otplink = _otplink_fields(case, name, when, loc, result.narrative.body, manifest_rows)
             fields = _otplink_markdown(otplink)
             provenance = _ai_provenance(case, labels, findings_by_id, jobs_by_id, result)
-            copies = ("Copies of your files are in originals/." if any(r["file_in_package"] for r in manifest_rows) else
-                      "Your files are not in this package: upload the copies on your own device.")
-            readme = (f"{DISCLAIMER}\n\n{AI_USE_STATEMENT}\n\n{copies} Before uploading, check that each file's SHA-256 "
-                      "matches sha256_in_package in manifest.json (sha256sum on Linux and macOS, Get-FileHash on "
-                      "Windows); a match proves it is the same file ICCLexAI analysed.\n")
+            readme = (f"{DISCLAIMER}\n\n{AI_USE_STATEMENT}\n\nThis package is your record of the submission. It holds no "
+                      "copy of your files: each file's SHA-256 is in manifest.json, and a matching copy (sha256sum on "
+                      "Linux and macOS, Get-FileHash on Windows) is the same file ICCLexAI analysed.\n")
             z.writestr("README_FIRST.txt", readme)
             z.writestr("manifest.json", manifest_json)
             z.writestr("manifest.csv", mcsv.getvalue())
@@ -363,6 +343,6 @@ def build_package(session: Session, case: Case, storage: LocalStorage, *, strip_
     case.status = "package_ready"
     custody.record(session, case.id, "package_built", actor_type="system", actor_ref="package",
                    detail={"version": version, "zip_sha256": stored_zip.sha256, "manifest_sha256": pkg.manifest_sha256,
-                           "metadata_removed": strip_metadata_on_export})
+                           "files_sent_as_they_are": True})
     session.flush()
     return pkg, result

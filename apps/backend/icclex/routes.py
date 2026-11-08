@@ -140,6 +140,7 @@ def update_case(body: CaseUpdate, case: Case = Depends(get_case), session: Sessi
         case.incident_location = _point(lat, lon) if lat is not None else None
     if "incident_from" in data or "incident_to" in data:
         start, end = data.pop("incident_from", None), data.pop("incident_to", None)
+        end = end or start  # a one-day incident; sending only a start date crashed this with a 500
         if start and end and end < start:
             raise HTTPException(422, "incident_to is before incident_from")
         case.incident_period = Range(datetime.combine(start, time.min, UTC), datetime.combine(end, time.max, UTC)) if start else None
@@ -294,11 +295,25 @@ def bulk_findings(body: BulkAction, case: Case = Depends(get_case), session: Ses
     return {"changed": len(found), "requested": len(ids)}
 
 
+def _is_uuid(value: str) -> bool:
+    try:
+        uuid.UUID(value)
+        return True
+    except ValueError:
+        return False
+
+
 @router.post("/cases/{case_id}/facts", status_code=201)
 def add_fact(body: StatedFact, case: Case = Depends(get_case), session: Session = Depends(get_session)):
     """A fact the submitter typed themselves. It is theirs, so it starts confirmed."""
-    f = Finding(case_id=case.id, kind="stated_fact", source="stated", status="confirmed", confirmed_at=datetime.now(UTC),
-                value=body.model_dump())
+    evidence_id = None
+    if body.evidence_id:
+        ev = session.get(Evidence, uuid.UUID(body.evidence_id)) if _is_uuid(body.evidence_id) else None
+        if not ev or ev.case_id != case.id:
+            raise HTTPException(404, "evidence not found")
+        evidence_id = ev.id
+    f = Finding(case_id=case.id, evidence_id=evidence_id, kind="stated_fact", source="stated", status="confirmed",
+                confirmed_at=datetime.now(UTC), value=body.model_dump(exclude={"evidence_id"}))
     session.add(f)
     session.flush()
     custody.record(session, case.id, "finding_changed", actor_type="user", actor_ref="anonymous",
@@ -335,8 +350,7 @@ def read_custody(case: Case = Depends(get_case), session: Session = Depends(get_
 def make_package(body: PackageRequest, case: Case = Depends(get_case), session: Session = Depends(get_session),
                  storage: LocalStorage = Depends(get_storage)):
     try:
-        pkg, result = build_package(session, case, storage, strip_metadata_on_export=body.strip_metadata,
-                                    include_originals=body.include_originals,
+        pkg, result = build_package(session, case, storage, consent_files_as_they_are=body.consent_files_as_they_are,
                                     use_model=bool(case.external_processing_consent and config.GROQ_API_KEY))
     except PackageError as exc:
         raise HTTPException(409, str(exc)) from exc

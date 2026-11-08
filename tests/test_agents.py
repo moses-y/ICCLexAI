@@ -314,3 +314,18 @@ def test_naming_an_unknown_step_to_reanalyse_is_rejected(client, case, run_jobs)
     case_id, headers = case
     r = client.post(f"/api/cases/{case_id}/evidence/{res['evidence_id']}/rerun", headers=headers, json={"agents": ["bogus"]})
     assert r.status_code == 422
+
+
+@pytest.mark.parametrize("name, iso", [
+    ("WhatsApp Video 2025-06-17 at 22.46.40_9b4b9433.mp4", "2025-06-17T22:46:40"),
+    ("IMG_20250617_224639.jpg", "2025-06-17T22:46:39"),
+    ("Screenshot_20250617-224639.png", "2025-06-17T22:46:39"),
+    ("holiday.jpg", None),
+    ("WhatsApp Image 2025-13-40 at 22.46.39.jpg", None),  # not a real date
+])
+def test_a_date_in_the_file_name_is_read_as_its_own_kind(name, iso):
+    from icclex.agents.metadata import _name_date
+
+    found = _name_date(name)
+    assert (found[0].value["iso"] if found else None) == iso
+    assert not found or (found[0].kind == "name_date" and found[0].source == "extracted")

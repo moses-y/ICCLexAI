@@ -8,14 +8,18 @@ import FindingsPanel from './FindingsPanel'
 import StatementsPanel from './StatementsPanel'
 import MapPanel from './MapPanel'
 import PackagePanel from './PackagePanel'
+import SendPanel from './SendPanel'
+import { basicsComplete } from './IncidentBasics'
+import { ArrowRight, Check, FolderUp, KeyRound, LogOut, PackageCheck, PenLine, Scale, ScanSearch, Send, ShieldCheck, type LucideIcon } from 'lucide-react'
 
-const STEPS = [
-  { id: 'evidence', label: '1 · Files' },
-  { id: 'review', label: '2 · Review' },
-  { id: 'account', label: '3 · Your account' },
-  { id: 'package', label: '4 · Package' },
+const STEPS: readonly { id: string; label: string; icon: LucideIcon }[] = [
+  { id: 'evidence', label: 'Files', icon: FolderUp },
+  { id: 'review', label: 'Review', icon: ScanSearch },
+  { id: 'account', label: 'Your account', icon: PenLine },
+  { id: 'package', label: 'Prepare', icon: PackageCheck },
+  { id: 'send', label: 'Send', icon: Send },
 ] as const
-type Step = (typeof STEPS)[number]['id']
+type Step = 'evidence' | 'review' | 'account' | 'package' | 'send'
 const POLL_MS = 2000
 
 function StartScreen({ onSession }: { onSession: (s: Session) => void }) {
@@ -38,16 +42,24 @@ function StartScreen({ onSession }: { onSession: (s: Session) => void }) {
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-4 p-4">
-      <h1 className="text-2xl font-bold">ICCLexAI</h1>
-      <p className="text-sm text-gray-700">
+    <div className="mx-auto max-w-2xl space-y-5 p-4 pt-10">
+      <div className="brand-gradient overflow-hidden rounded-2xl p-6 text-white shadow-lg shadow-brand-navy/20">
+        <div className="flex items-center gap-3">
+          <span className="grid h-11 w-11 place-items-center rounded-xl bg-white/15 ring-1 ring-white/25"><Scale className="h-6 w-6" /></span>
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">ICCLexAI</h1>
+            <p className="text-sm text-white/75">Prepare evidence for the ICC Office of the Prosecutor</p>
+          </div>
+        </div>
+      </div>
+      <p className="text-sm text-muted-foreground">
         This tool helps you prepare information for the International Criminal Court’s Office of the Prosecutor.
         It analyses your files, shows you what it found, and builds a package <strong>that you file yourself</strong> on
         the ICC’s OTPLink portal. It never submits anything for you, and it does not give legal advice or decide
         whether a crime was committed.
       </p>
       <Card>
-        <CardHeader><CardTitle className="text-base">Before you start</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-base"><ShieldCheck />Before you start</CardTitle></CardHeader>
         <CardContent className="space-y-3 text-sm">
           <p>No account or name is needed. You get a <strong>case key</strong>. Keep it safe: there is no way to recover it.</p>
           <label className="flex gap-2">
@@ -58,11 +70,11 @@ function StartScreen({ onSession }: { onSession: (s: Session) => void }) {
               this server; only the checks that read file details will run.
             </span>
           </label>
-          <Button onClick={create} disabled={busy}>Start a new case</Button>
+          <Button onClick={create} disabled={busy}>Start a new case<ArrowRight /></Button>
           <div className="border-t pt-3">
-            <label className="block text-xs text-gray-600">Already have a case key?</label>
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground"><KeyRound className="h-3.5 w-3.5" />Already have a case key?</label>
             <div className="flex gap-2">
-              <input value={resumeText} onChange={e => setResumeText(e.target.value)} className="flex-1 rounded border px-2 py-1 text-sm" placeholder="paste your case key" />
+              <input value={resumeText} onChange={e => setResumeText(e.target.value)} className="flex-1 rounded-lg border px-3 py-1.5 text-sm" placeholder="paste your case key" />
               <Button variant="outline" onClick={resume}>Open</Button>
             </div>
           </div>
@@ -111,21 +123,38 @@ export default function CaseApp() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-4 p-4">
-      <header className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-bold">ICCLexAI <span className="text-sm font-normal text-gray-600">· case {detail.id.slice(0, 8)} · {detail.status.replace(/_/g, ' ')}</span></h1>
-        <Button variant="outline" size="sm" onClick={leave}>Close this case on this device</Button>
+      <header className="brand-gradient flex flex-wrap items-center justify-between gap-3 rounded-2xl px-5 py-4 text-white shadow-lg shadow-brand-navy/20">
+        <div className="flex items-center gap-3">
+          <span className="grid h-10 w-10 place-items-center rounded-xl bg-white/15 ring-1 ring-white/25"><Scale className="h-5 w-5" /></span>
+          <div>
+            <h1 className="text-lg font-semibold leading-tight tracking-tight">ICCLexAI</h1>
+            <p className="text-xs text-white/75">Case {detail.id.slice(0, 8)} · <span className="rounded-full bg-brand-gold/25 px-2 py-0.5 text-white ring-1 ring-brand-gold/40">{detail.status.replace(/_/g, ' ')}</span></p>
+          </div>
+        </div>
+        <Button variant="light" size="sm" onClick={leave}><LogOut />Close this case on this device</Button>
       </header>
-      <details className="rounded border bg-amber-50 p-2 text-sm" open={!stored}>
-        <summary className="cursor-pointer font-medium">Your case key{!stored && ' (this browser could not save it: copy it now)'}</summary>
-        <p className="mt-1 break-all font-mono text-xs">{toKeyString(session)}</p>
-        <p className="mt-1 text-xs text-gray-700">Anyone with this key can open your case. Closing the case here removes it from this device only; use the key to open it again. If you lose the key, the case cannot be recovered.</p>
+      <details className="rounded-xl border border-brand-gold/40 bg-brand-gold/10 p-3 text-sm" open={!stored}>
+        <summary className="flex cursor-pointer items-center gap-2 font-medium text-brand-navy"><KeyRound className="h-4 w-4 text-brand-gold" />Your case key{!stored && ' (this browser could not save it: copy it now)'}</summary>
+        <p className="mt-2 break-all rounded-lg bg-white/70 p-2 font-mono text-xs">{toKeyString(session)}</p>
+        <p className="mt-1 text-xs text-muted-foreground">Anyone with this key can open your case. Closing the case here removes it from this device only; use the key to open it again. If you lose the key, the case cannot be recovered.</p>
       </details>
-      {error && <p role="alert" className="rounded bg-red-50 p-2 text-sm text-red-800">{error}</p>}
+      {error && <p role="alert" className="rounded-lg bg-red-50 p-2 text-sm text-red-800">{error}</p>}
 
-      <nav className="flex gap-1 overflow-x-auto" aria-label="Steps">
-        {STEPS.map(s => (
-          <Button key={s.id} size="sm" variant={s.id === step ? 'default' : 'outline'} onClick={() => go(s.id)}>{s.label}</Button>
-        ))}
+      <nav className="flex gap-1 overflow-x-auto rounded-xl border bg-white/80 p-1.5 shadow-sm backdrop-blur" aria-label="Steps">
+        {STEPS.map((s, i) => {
+          const at = STEPS.findIndex(x => x.id === step)
+          const current = s.id === step
+          const Icon = i < at ? Check : s.icon
+          return (
+            <button key={s.id} type="button" onClick={() => go(s.id as Step)} aria-current={current ? 'step' : undefined}
+              className={`flex min-w-fit flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+                current ? 'bg-gradient-to-r from-brand-navy to-brand-teal text-white shadow-md shadow-brand-navy/25'
+                  : i < at ? 'text-brand-teal hover:bg-accent' : 'text-muted-foreground hover:bg-secondary hover:text-brand-navy'}`}>
+              <span className={`grid h-6 w-6 place-items-center rounded-full text-xs ${current ? 'bg-white/20' : i < at ? 'bg-brand-teal/10' : 'bg-secondary'}`}><Icon className="h-3.5 w-3.5" /></span>
+              <span><span className="opacity-60">{i + 1} · </span>{s.label}</span>
+            </button>
+          )
+        })}
       </nav>
 
       {step === 'evidence' && <EvidencePanel session={session} detail={detail} refresh={refresh} next={() => go('review')} />}
@@ -133,15 +162,22 @@ export default function CaseApp() {
         <FindingsPanel session={session} detail={detail} findings={findings} refresh={refresh} />
         <MapPanel session={session} detail={detail} findings={findings} refresh={refresh} />
         <div className="flex flex-wrap items-center gap-3">
-          <Button onClick={() => go('account')}>Continue to your account</Button>
-          {unreviewed > 0 && <span className="text-sm text-gray-700">{unreviewed} not reviewed yet: they stay out of the package until you confirm them.</span>}
+          <Button onClick={() => go('account')}>Continue to your account<ArrowRight /></Button>
+          {unreviewed > 0 && <span className="text-sm text-muted-foreground">{unreviewed} not reviewed yet: they stay out of the package until you confirm them.</span>}
         </div>
       </>)}
       {step === 'account' && (<>
         <StatementsPanel session={session} detail={detail} findings={findings} refresh={refresh} />
-        <div><Button onClick={() => go('package')}>Continue to the package</Button></div>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button onClick={() => go('package')} disabled={!basicsComplete(detail)}>Continue to prepare<ArrowRight /></Button>
+          {!basicsComplete(detail) && <span className="text-sm text-muted-foreground">Give the date and place first: OTPLink requires both.</span>}
+        </div>
       </>)}
-      {step === 'package' && <PackagePanel session={session} detail={detail} findings={findings} refresh={refresh} />}
+      {step === 'package' && (<>
+        <PackagePanel session={session} detail={detail} findings={findings} refresh={refresh} />
+        {detail.package?.status === 'current' && <div><Button onClick={() => go('send')}>Continue to send<ArrowRight /></Button></div>}
+      </>)}
+      {step === 'send' && <SendPanel session={session} detail={detail} refresh={refresh} />}
     </div>
   )
 }

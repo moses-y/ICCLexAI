@@ -91,7 +91,7 @@ sequenceDiagram
     API->>OBJ: write original, SHA-256 while streaming, read-only
     API->>DB: evidence + custody_event(received) + analysis_jobs
     API-->>UI: evidence id and sha256
-    W->>DB: claim a job (SKIP LOCKED; waits for its dependency)
+    W->>DB: claim a job (SKIP LOCKED, after its dependency and not_before)
     W->>OBJ: read the original
     W->>AG: run the agent
     AG-->>W: findings (extracted / inferred) or AgentUnavailable
@@ -101,12 +101,16 @@ sequenceDiagram
     UI->>API: PATCH /findings/{id}
     API->>DB: finding status (an edit is a new row), custody_event
     U->>UI: describe the incident
-    API->>DB: stated findings; date conflicts put to the submitter
-    U->>UI: build package
+    UI->>API: POST /interview, /facts, PATCH date and place
+    API->>DB: stated findings, date conflicts put to the submitter
+    U->>UI: agree to send files as they are, prepare
+    UI->>API: POST /package (consent)
     API->>DB: timeline, narrative + claims, package, custody_event
     API-->>UI: package ready
-    U->>UI: download and file on OTPLink
-    U->>UI: "I filed it" (optional reference)
+    U->>UI: Send step, check own files in the browser
+    UI->>API: GET /package/otplink (field text)
+    U->>UI: file on OTPLink, then record it (optional reference)
+    UI->>API: POST /filed
     API->>DB: status filed_by_user (reported, not verified)
 ```
 

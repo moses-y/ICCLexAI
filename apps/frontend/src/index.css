@@ -3,27 +3,31 @@
 @tailwind utilities;
 
 @layer base {
+  /* Navy base, teal second, a muted gold as the subtle third (2026-11-08 refresh). */
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --navy: 218 62% 16%;
+    --teal: 184 72% 30%;
+    --gold: 41 56% 54%;
+    --background: 216 33% 97%;
+    --foreground: 218 45% 12%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 218 45% 12%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
+    --popover-foreground: 218 45% 12%;
+    --primary: var(--navy);
     --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222.2 84% 4.9%;
-    --muted: 210 40% 96%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96%;
-    --accent-foreground: 222.2 84% 4.9%;
-    --destructive: 0 84.2% 60.2%;
+    --secondary: 214 32% 94%;
+    --secondary-foreground: 218 45% 16%;
+    --muted: 214 32% 95%;
+    --muted-foreground: 217 18% 42%;
+    --accent: 184 40% 94%;
+    --accent-foreground: 218 45% 16%;
+    --destructive: 0 72% 46%;
     --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
-    --radius: 0.5rem;
+    --border: 216 24% 88%;
+    --input: 216 24% 84%;
+    --ring: var(--teal);
+    --radius: 0.75rem;
   }
 
   .dark {
@@ -54,6 +58,36 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    background-image:
+      radial-gradient(60rem 30rem at 0% -10%, hsl(var(--navy) / 0.07), transparent 60%),
+      radial-gradient(50rem 28rem at 100% 0%, hsl(var(--teal) / 0.07), transparent 60%),
+      radial-gradient(40rem 24rem at 90% 100%, hsl(var(--gold) / 0.06), transparent 60%);
+    background-attachment: fixed;
+  }
+  input, textarea, select { accent-color: hsl(var(--teal)); }
+  input:not([type=checkbox]):not([type=radio]):not([type=file]), textarea, select {
+    @apply bg-white transition-shadow;
+  }
+  input:focus-visible, textarea:focus-visible, select:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px hsl(var(--teal) / 0.25);
+    border-color: hsl(var(--teal));
+  }
+  input[type=file]::file-selector-button {
+    @apply mr-3 cursor-pointer rounded-md border-0 px-3 py-1.5 text-sm font-medium text-white;
+    background: linear-gradient(110deg, hsl(var(--navy)), hsl(var(--teal)));
+  }
+}
+
+@layer components {
+  .brand-gradient {
+    background:
+      radial-gradient(28rem 10rem at 100% 120%, hsl(var(--gold) / 0.35), transparent 70%),
+      linear-gradient(115deg, hsl(var(--navy)) 0%, hsl(218 55% 24%) 45%, hsl(var(--teal)) 100%);
+  }
+  .brand-text {
+    background: linear-gradient(100deg, hsl(var(--navy)), hsl(var(--teal)) 70%, hsl(var(--gold)));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
   }
 }

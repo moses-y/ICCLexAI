@@ -18,6 +18,11 @@ export default {
     },
     extend: {
       colors: {
+        brand: {
+          navy: "hsl(var(--navy))",
+          teal: "hsl(var(--teal))",
+          gold: "hsl(var(--gold))",
+        },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",

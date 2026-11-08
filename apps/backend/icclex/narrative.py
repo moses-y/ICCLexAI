@@ -29,6 +29,9 @@ def render_finding(f: Finding) -> str:
     k = f.kind
     if k == "capture_time":
         return f"capture time {v['iso']} ({'with' if v.get('tz_known') else 'without'} a time zone), read from {v.get('field')}"
+    if k == "name_date":
+        return (f"the file name contains the date {v['iso']} (\"{v['from_name']}\"), which is when an app saved the file, "
+                "not necessarily when the events happened")
     if k == "gps":
         return f"GPS coordinates {v['lat']:.5f}, {v['lon']:.5f} are recorded in the file ({v.get('field')})"
     if k == "place":
@@ -72,13 +75,21 @@ def citable_findings(session: Session, case_id: uuid.UUID) -> list[Finding]:
         Finding.case_id == case_id, Finding.status.in_(CITABLE_STATUSES)).order_by(Finding.created_at)).scalars())
 
 
+# Kinds that describe the file rather than the events. The first real package (2026-11-06) opened its Factual
+# Summary with image dimensions and video lengths; these stay in summary.pdf and the manifest instead.
+NARRATIVE_EXCLUDED_KINDS = ("file_properties", "device", "integrity_flag")
+
 SYSTEM = (
-    "You write the factual account section of a submission to the ICC Office of the Prosecutor, from a numbered "
-    "list of confirmed facts. Rules: use only the facts given; cite every sentence with the ids of the facts that "
-    "support it; say where a fact came from (the file, an AI suggestion the submitter confirmed, or the submitter's "
-    "own statement); never state or imply that a crime was committed, that anyone is guilty, that the ICC has "
-    "jurisdiction, or that an investigation should open; you may say what the material shows or what the "
-    "submitter reports. Reply with JSON: {\"sentences\": [{\"text\": str, \"cites\": [\"F1\", ...]}]}."
+    "You write the Factual Summary of a submission to the ICC Office of the Prosecutor, from a numbered list of "
+    "confirmed facts. Order: first what the submitter reports in their own words; then, file by file, what each "
+    "file shows and when and where the material suggests it was made; then how the submitter obtained each file. "
+    "Rules: use only the facts given; cite every sentence with the ids of the facts that support it; say where a "
+    "fact came from (the file, an AI suggestion the submitter confirmed, or the submitter's own statement); a date "
+    "in a file name or file metadata is when the file was made or saved, not proof of when events happened, so say "
+    "so; leave out technical details such as formats and sizes; never state or imply that a crime was committed, "
+    "that anyone is guilty, that the ICC has jurisdiction, or that an investigation should open; you may say what "
+    "the material shows or what the submitter reports. "
+    "Reply with JSON: {\"sentences\": [{\"text\": str, \"cites\": [\"F1\", ...]}]}."
 )
 
 
@@ -90,6 +101,7 @@ def build_narrative(session: Session, case_id: uuid.UUID, *, use_model: bool) ->
     findings = citable_findings(session, case_id)
     if not findings:
         raise ValueError("there are no confirmed findings to write from")
+    findings = [f for f in findings if f.kind not in NARRATIVE_EXCLUDED_KINDS] or findings
     by_label = {f"F{i}": f for i, f in enumerate(findings, start=1)}
     names = {e.id: e.original_name for e in session.execute(select(Evidence).where(Evidence.case_id == case_id)).scalars()}
     dropped: list[dict] = []

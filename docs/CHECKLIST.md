@@ -49,6 +49,16 @@ Where ICCLexAI stands. Update this when an item changes; give the date and how i
       Streamlit. Review before any deploy.
 - [ ] **`streamlit` in `pyproject.toml`** is only needed by archived apps; remove it once nothing uses it.
 - [ ] **`libs/icc_automation/`**: old agents kept until the new ones are accepted; archive after that.
+- [ ] **GitHub Pages project site**: a public page for the project (what it does, the five steps with
+      screenshots, the AI design and the transcript-gate numbers) linked from the README and LinkedIn.
+      Static only, built from `docs/`; it must not host the case app, which handles evidence.
+- [ ] **CI that runs the tests** on every push, against a PostGIS service container, with a status badge
+      in the README. No workflow runs pytest today, so the README carries no test badge.
+- [ ] **Pre-fill when and where in step 3** from the person's own account first, then file-name dates
+      and the most specific place suggestion, confirmed with one click.
+- [ ] **Assisted sending**: a browser on the server fills OTPLink, the person watches live, ticks the
+      reCAPTCHA and clicks Submit; the reference is read from the confirmation page. Never solve the
+      captcha, never submit for testing.
 
 ## Decided
 
